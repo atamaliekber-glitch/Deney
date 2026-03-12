@@ -1,0 +1,124 @@
+; ==============================================================================
+; Hedef İşlemci : PIC16F628A
+; İşlev         : 4x4 Keypad'den okunan değeri PORTA'daki LED'lere binary yansıtma
+; Bağlantılar   : PORTB (RB0-RB3: Sütun çıkışları, RB4-RB7: Satır girişleri)
+;                 PORTA (RA0-RA3: LED çıkışları)
+; ==============================================================================
+
+    LIST P=16F628A
+    INCLUDE "P16F628A.INC"
+    __CONFIG _INTRC_OSC_NOCLKOUT & _WDT_OFF & _PWRTE_ON & _MCLRE_ON & _LVP_OFF
+
+    ORG 0x00
+    GOTO BASLA
+
+BASLA
+    ; Komparatörleri kapat, PORTA'yı dijital I/O yap (PIC16F628A için kritik adım)
+    MOVLW 0x07
+    MOVWF CMCON
+
+    ; Bank 1'e geç ve port yönlendirmelerini yap
+    BSF STATUS, RP0
+
+    ; PORTB Ayarı: Alt 4 bit Çıkış (Sütunlar), Üst 4 bit Giriş (Satırlar)
+    MOVLW b'11110000'
+    MOVWF TRISB
+
+    ; PORTB Dahili Pull-up dirençlerini aktif et (Şemada harici var ama garanti olsun)
+    BCF OPTION_REG, 7
+
+    ; PORTA Ayarı: İlk 4 bit (RA0-RA3) LED'ler için çıkış olsun
+    MOVLW b'11110000'
+    MOVWF TRISA
+
+    ; Bank 0'a dön
+    BCF STATUS, RP0
+
+    ; Başlangıçta tüm LED'leri söndür
+    CLRF PORTA
+
+ANA_DONGU
+    ; --- 1. SÜTUN TARAMASI (Y0 = 0) ---
+    MOVLW b'11111110'    ; Sadece RB0'ı sıfıra çek
+    MOVWF PORTB
+    NOP                  ; Sinyalin oturması için minik bir bekleme
+    BTFSS PORTB, 4       ; 0 Tuşuna basıldı mı?
+    CALL TUS_0
+    BTFSS PORTB, 5       ; 4 Tuşuna basıldı mı?
+    CALL TUS_4
+    BTFSS PORTB, 6       ; 8 Tuşuna basıldı mı?
+    CALL TUS_8
+    BTFSS PORTB, 7       ; C Tuşuna basıldı mı?
+    CALL TUS_C
+
+    ; --- 2. SÜTUN TARAMASI (Y1 = 0) ---
+    MOVLW b'11111101'    ; Sadece RB1'i sıfıra çek
+    MOVWF PORTB
+    NOP
+    BTFSS PORTB, 4       ; 1 Tuşuna basıldı mı?
+    CALL TUS_1
+    BTFSS PORTB, 5       ; 5 Tuşuna basıldı mı?
+    CALL TUS_5
+    BTFSS PORTB, 6       ; 9 Tuşuna basıldı mı?
+    CALL TUS_9
+    BTFSS PORTB, 7       ; D Tuşuna basıldı mı?
+    CALL TUS_D
+
+    ; --- 3. SÜTUN TARAMASI (Y2 = 0) ---
+    MOVLW b'11111011'    ; Sadece RB2'yi sıfıra çek
+    MOVWF PORTB
+    NOP
+    BTFSS PORTB, 4       ; 2 Tuşuna basıldı mı?
+    CALL TUS_2
+    BTFSS PORTB, 5       ; 6 Tuşuna basıldı mı?
+    CALL TUS_6
+    BTFSS PORTB, 6       ; A Tuşuna basıldı mı?
+    CALL TUS_A
+    BTFSS PORTB, 7       ; E Tuşuna basıldı mı?
+    CALL TUS_E
+
+    ; --- 4. SÜTUN TARAMASI (Y3 = 0) ---
+    MOVLW b'11110111'    ; Sadece RB3'ü sıfıra çek
+    MOVWF PORTB
+    NOP
+    BTFSS PORTB, 4       ; 3 Tuşuna basıldı mı?
+    CALL TUS_3
+    BTFSS PORTB, 5       ; 7 Tuşuna basıldı mı?
+    CALL TUS_7
+    BTFSS PORTB, 6       ; B Tuşuna basıldı mı?
+    CALL TUS_B
+    BTFSS PORTB, 7       ; F Tuşuna basıldı mı?
+    CALL TUS_F
+
+    GOTO ANA_DONGU       ; Sürekli taramaya devam et
+
+; --- TUŞ DEĞERİ ATAMA ALT PROGRAMLARI ---
+TUS_0: MOVLW 0x00; GOTO EKRANA_YAZ
+TUS_1: MOVLW 0x01; GOTO EKRANA_YAZ
+TUS_2: MOVLW 0x02; GOTO EKRANA_YAZ
+TUS_3: MOVLW 0x03; GOTO EKRANA_YAZ
+TUS_4: MOVLW 0x04; GOTO EKRANA_YAZ
+TUS_5: MOVLW 0x05; GOTO EKRANA_YAZ
+TUS_6: MOVLW 0x06; GOTO EKRANA_YAZ
+TUS_7: MOVLW 0x07; GOTO EKRANA_YAZ
+TUS_8: MOVLW 0x08; GOTO EKRANA_YAZ
+TUS_9: MOVLW 0x09; GOTO EKRANA_YAZ
+TUS_A: MOVLW 0x0A; GOTO EKRANA_YAZ
+TUS_B: MOVLW 0x0B; GOTO EKRANA_YAZ
+TUS_C: MOVLW 0x0C; GOTO EKRANA_YAZ
+TUS_D: MOVLW 0x0D; GOTO EKRANA_YAZ
+TUS_E: MOVLW 0x0E; GOTO EKRANA_YAZ
+TUS_F: MOVLW 0x0F; GOTO EKRANA_YAZ
+
+EKRANA_YAZ
+    MOVWF PORTA          ; W kaydedicisindeki binary değeri LED'lere gönder
+TUS_BIRAK_BEKLE
+    ; Tuşa basılı tutulduğu sürece kodu burada bekletiriz (Sürekli aynı tuşu algılamaması için)
+    MOVF PORTB, W        ; PORTB'yi oku
+    ANDLW b'11110000'    ; Sadece giriş olan üst 4 biti (satırları) filtrele
+    XORLW b'11110000'    ; Tüm tuşlar bırakıldıysa (hepsi 1 ise) sonuç 0 olur
+    BTFSS STATUS, Z      ; Sonuç sıfır oldu mu? (Tuş bırakıldı mı?)
+    GOTO TUS_BIRAK_BEKLE ; Hayır, parmak hala butonda. Bekle.
+    RETURN               ; Evet bırakıldı, ana döngüye dön.
+
+    END
