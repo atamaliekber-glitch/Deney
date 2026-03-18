@@ -1,0 +1,150 @@
+list p=16f628a
+    include "p16f628a.inc"
+
+    ; Sigorta ayarları
+    __CONFIG _FOSC_INTOSCIO & _WDTE_OFF & _PWRTE_ON & _MCLRE_ON & _BOREN_OFF & _LVP_OFF & _CPD_OFF & _CP_OFF
+
+    ; Gecikme döngüsü değişkenleri
+    cblock 0x20
+        DELAY1
+        DELAY2
+    endc
+
+    ORG 0x0000          ; Program başlangıç adresi
+    goto INIT
+
+INIT
+    ; Port ayarları
+    bcf STATUS, RP1
+    bsf STATUS, RP0     ; Bank 1'e geç
+
+    ; PORTA'nın ilk 4 bitini (RA0-RA3) LED'ler için çıkış yap
+    movlw b'11110000'   
+    movwf TRISA         
+
+    ; PORTB: RB0-RB3 Çıkış (Satırlar), RB4-RB7 Giriş (Sütunlar)
+    movlw b'11110000'   
+    movwf TRISB
+
+    ; PORTB dahili Pull-Up dirençlerini aktif et (Giriş pinleri boşta HIGH olsun)
+    bcf OPTION_REG, 7   
+
+    bcf STATUS, RP0     ; Bank 0'a dön
+    
+    clrf PORTA          ; LED'leri başlangıçta söndür (D0-D3 kapalı)
+    clrf PORTB          ; PORTB çıkışlarını sıfırla
+
+MAIN_LOOP
+    ; --- 1. SATIR TARAMASI (Tuşlar: 0, 1, 2, 3) ---
+    movlw b'11111110'   ; RB0 = 0 (LOW), diğerleri HIGH
+    movwf PORTB
+    call DEBOUNCE_DELAY ; Ark önleme beklemesi
+    btfss PORTB, 4      ; Sütun 1 (RB4) LOW mu? (0 tuşu)
+    call KEY_0          
+    btfss PORTB, 5      ; Sütun 2 (RB5) LOW mu? (1 tuşu)
+    call KEY_1
+    btfss PORTB, 6      ; Sütun 3 (RB6) LOW mu? (2 tuşu)
+    call KEY_2
+    btfss PORTB, 7      ; Sütun 4 (RB7) LOW mu? (3 tuşu)
+    call KEY_3
+
+    ; --- 2. SATIR TARAMASI (Tuşlar: 4, 5, 6, 7) ---
+    movlw b'11111101'   ; RB1 = 0 (LOW)
+    movwf PORTB
+    call DEBOUNCE_DELAY
+    btfss PORTB, 4      ; 4 tuşu
+    call KEY_4
+    btfss PORTB, 5      ; 5 tuşu
+    call KEY_5
+    btfss PORTB, 6      ; 6 tuşu
+    call KEY_6
+    btfss PORTB, 7      ; 7 tuşu
+    call KEY_7
+
+    ; --- 3. SATIR TARAMASI (Tuşlar: 8, 9, A, B) ---
+    movlw b'11111011'   ; RB2 = 0 (LOW)
+    movwf PORTB
+    call DEBOUNCE_DELAY
+    btfss PORTB, 4      ; 8 tuşu
+    call KEY_8
+    btfss PORTB, 5      ; 9 tuşu
+    call KEY_9
+    btfss PORTB, 6      ; A (10) tuşu
+    call KEY_A
+    btfss PORTB, 7      ; B (11) tuşu
+    call KEY_B
+
+    ; --- 4. SATIR TARAMASI (Tuşlar: C, D, E, F) ---
+    movlw b'11110111'   ; RB3 = 0 (LOW)
+    movwf PORTB
+    call DEBOUNCE_DELAY
+    btfss PORTB, 4      ; C (12) tuşu
+    call KEY_C
+    btfss PORTB, 5      ; D (13) tuşu
+    call KEY_D
+    btfss PORTB, 6      ; E (14) tuşu
+    call KEY_E
+    btfss PORTB, 7      ; F (15) tuşu
+    call KEY_F
+
+    goto MAIN_LOOP      ; Hiçbir tuşa basılmadıysa taramaya devam et
+
+; --- TUŞ DEĞERLERİNİ BİNARY OLARAK AYARLAMA ---
+KEY_0: movlw 0x00
+       goto UPDATE_LEDS
+KEY_1: movlw 0x01
+       goto UPDATE_LEDS
+KEY_2: movlw 0x02
+       goto UPDATE_LEDS
+KEY_3: movlw 0x03
+       goto UPDATE_LEDS
+KEY_4: movlw 0x04
+       goto UPDATE_LEDS
+KEY_5: movlw 0x05
+       goto UPDATE_LEDS
+KEY_6: movlw 0x06
+       goto UPDATE_LEDS
+KEY_7: movlw 0x07
+       goto UPDATE_LEDS
+KEY_8: movlw 0x08
+       goto UPDATE_LEDS
+KEY_9: movlw 0x09
+       goto UPDATE_LEDS
+KEY_A: movlw 0x0A       ; A harfi = Onluk sistemde 10 (Binary: 1010)
+       goto UPDATE_LEDS
+KEY_B: movlw 0x0B       ; B harfi = Onluk sistemde 11 (Binary: 1011)
+       goto UPDATE_LEDS
+KEY_C: movlw 0x0C       ; C harfi = Onluk sistemde 12 (Binary: 1100)
+       goto UPDATE_LEDS
+KEY_D: movlw 0x0D       ; D harfi = Onluk sistemde 13 (Binary: 1101)
+       goto UPDATE_LEDS
+KEY_E: movlw 0x0E       ; E harfi = Onluk sistemde 14 (Binary: 1110)
+       goto UPDATE_LEDS
+KEY_F: movlw 0x0F       ; F harfi = Onluk sistemde 15 (Binary: 1111)
+       goto UPDATE_LEDS
+
+; --- LEDLERİ GÜNCELLEME VE BUTONU BIRAKMAYI BEKLEME ---
+UPDATE_LEDS:
+    movwf PORTA         ; W kaydedicisindeki binary değeri LED'lere yansıt
+WAIT_RELEASE:
+    movf PORTB, W       ; Sütunları kontrol etmek için PORTB'yi oku
+    andlw 0xF0          ; Sadece üst 4 biti (Sütun girişlerini) maskele
+    xorlw 0xF0          ; Hepsi 1 mi? (Yani tüm tuşlar bırakılmış mı?)
+    btfss STATUS, Z     ; Eğer hepsi 1 ise Z bayrağı set olur, alt satırı atla
+    goto WAIT_RELEASE   ; Tuş hala basılıysa beklemeye devam et
+    call DEBOUNCE_DELAY ; Tuş bırakıldıktan sonraki elektriksel titremeyi atlat
+    return              ; Ana tarama döngüsüne geri dön
+
+; --- GECİKME ALT PROGRAMI ---
+DEBOUNCE_DELAY:
+    movlw 0x10
+    movwf DELAY1
+D1: movlw 0xFF
+    movwf DELAY2
+D2: decfsz DELAY2, F
+    goto D2
+    decfsz DELAY1, F
+    goto D1
+    return
+
+    END
