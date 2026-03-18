@@ -1,0 +1,147 @@
+list p=16f628a
+    include "p16f628a.inc"
+
+    ; İşlemci ayarları (Dahili osilatör, Watchdog kapalı vs.)
+    __CONFIG _FOSC_INTOSCIO & _WDTE_OFF & _PWRTE_ON & _MCLRE_ON & _BOREN_OFF & _LVP_OFF & _CPD_OFF & _CP_OFF
+
+    ; Değişkenler (Gecikme için)
+    cblock 0x20
+        DELAY1
+        DELAY2
+    endc
+
+    ORG 0x0000          ; Program başlangıcı
+    goto INIT
+
+INIT
+    ; Port Yönlendirme Ayarları
+    bcf STATUS, RP1
+    bsf STATUS, RP0     ; Bank 1'e geç
+
+    movlw b'11110000'   ; RA0-RA3 pinlerini çıkış yap (D0-D3 LED'leri için)
+    movwf TRISA         
+
+    movlw b'11110000'   ; PORTB: RB0-RB3 Çıkış (Satırlar), RB4-RB7 Giriş (Sütunlar)
+    movwf TRISB
+
+    bcf OPTION_REG, 7   ; PORTB dahili Pull-Up dirençlerini aktif et (Çok önemli!)
+
+    bcf STATUS, RP0     ; Bank 0'a dön
+    
+    clrf PORTA          ; Başlangıçta tüm LED'leri söndür
+    clrf PORTB          ; PORTB çıkışlarını sıfırla
+
+MAIN_LOOP
+    ; --- 1. SATIR TARAMASI (0, 1, 2, 3 Tuşları) ---
+    movlw b'11111110'   ; Sadece RB0 = 0 (LOW)
+    movwf PORTB
+    call DEBOUNCE
+    btfss PORTB, 4      ; Sütun 1
+    call KEY_0          
+    btfss PORTB, 5      ; Sütun 2
+    call KEY_1
+    btfss PORTB, 6      ; Sütun 3
+    call KEY_2
+    btfss PORTB, 7      ; Sütun 4
+    call KEY_3
+
+    ; --- 2. SATIR TARAMASI (4, 5, 6, 7 Tuşları) ---
+    movlw b'11111101'   ; Sadece RB1 = 0 (LOW)
+    movwf PORTB
+    call DEBOUNCE
+    btfss PORTB, 4
+    call KEY_4
+    btfss PORTB, 5
+    call KEY_5
+    btfss PORTB, 6
+    call KEY_6
+    btfss PORTB, 7
+    call KEY_7
+
+    ; --- 3. SATIR TARAMASI (8, 9, A, B Tuşları) ---
+    movlw b'11111011'   ; Sadece RB2 = 0 (LOW)
+    movwf PORTB
+    call DEBOUNCE
+    btfss PORTB, 4
+    call KEY_8
+    btfss PORTB, 5
+    call KEY_9
+    btfss PORTB, 6
+    call KEY_A
+    btfss PORTB, 7
+    call KEY_B
+
+    ; --- 4. SATIR TARAMASI (C, D, E, F Tuşları) ---
+    movlw b'11110111'   ; Sadece RB3 = 0 (LOW)
+    movwf PORTB
+    call DEBOUNCE
+    btfss PORTB, 4
+    call KEY_C
+    btfss PORTB, 5
+    call KEY_D
+    btfss PORTB, 6
+    call KEY_E
+    btfss PORTB, 7
+    call KEY_F
+
+    goto MAIN_LOOP      ; Döngüyü sürekli tekrarla
+
+; --- TUŞLARIN İKİLİK (BİNARY) DEĞERLERİ ---
+KEY_0: movlw 0x00
+       goto SHOW_LED
+KEY_1: movlw 0x01
+       goto SHOW_LED
+KEY_2: movlw 0x02
+       goto SHOW_LED
+KEY_3: movlw 0x03
+       goto SHOW_LED
+KEY_4: movlw 0x04
+       goto SHOW_LED
+KEY_5: movlw 0x05
+       goto SHOW_LED
+KEY_6: movlw 0x06
+       goto SHOW_LED
+KEY_7: movlw 0x07
+       goto SHOW_LED
+KEY_8: movlw 0x08
+       goto SHOW_LED
+KEY_9: movlw 0x09
+       goto SHOW_LED
+KEY_A: movlw 0x0A       ; Binary 1010
+       goto SHOW_LED
+KEY_B: movlw 0x0B       ; Binary 1011
+       goto SHOW_LED
+KEY_C: movlw 0x0C       ; Binary 1100
+       goto SHOW_LED
+KEY_D: movlw 0x0D       ; Binary 1101
+       goto SHOW_LED
+KEY_E: movlw 0x0E       ; Binary 1110
+       goto SHOW_LED
+KEY_F: movlw 0x0F       ; Binary 1111
+       goto SHOW_LED
+
+; --- LED'LERİ YAKMA VE ELİN ÇEKİLMESİNİ BEKLEME ---
+SHOW_LED:
+    movwf PORTA         ; Belirlenen değeri PORTA'ya (LED'lere) yansıt
+WAIT_RELEASE:
+    movf PORTB, W       ; Butondan elin çekilip çekilmediğini anlamak için portu oku
+    andlw 0xF0          ; Üst 4 biti maskele (Sütunlar)
+    xorlw 0xF0          
+    btfss STATUS, Z     ; Bütün tuşlar bırakıldıysa Z=1 olur
+    goto WAIT_RELEASE   ; Tuş basılıysa burada hapsol ve bekle
+    call DEBOUNCE       ; Tuş bırakıldıktan sonraki paraziti engelle
+    return              ; Ana taramaya dön
+
+; --- GECİKME DÖNGÜSÜ (DEBOUNCE) ---
+DEBOUNCE:
+    movlw 0x15
+    movwf DELAY1
+D1: movlw 0xFF
+    movwf DELAY2
+D2: decfsz DELAY2, F
+    goto D2
+    decfsz DELAY1, F
+    goto D1
+    return
+
+    END
