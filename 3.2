@@ -1,0 +1,48 @@
+    LIST P=16F628A
+    INCLUDE <P16F628A.INC>
+    __CONFIG _FOSC_INTOSCIO & _WDTE_OFF & _PWRTE_ON & _MCLRE_ON & _BOREN_OFF & _LVP_OFF & _CPD_OFF & _CP_OFF
+
+    ORG 0x00
+    GOTO BASLA
+
+BASLA:
+    ; 1. Port Ayarları
+    MOVLW 0x07          ; CMCON kaydedicisine 0x07 yüklenir
+    MOVWF CMCON         ; PORTA pinlerindeki analog komparatörler kapatılır, dijital I/O yapılır
+
+    BSF STATUS, RP0     ; Bank 1'e geçiş yap
+    MOVLW 0xFF          ; Tüm bitler 1 (Giriş)
+    MOVWF TRISA         ; PORTA'yı giriş olarak ayarla (Butonlar için)
+    CLRF TRISB          ; Tüm bitler 0 (Çıkış)
+    MOVWF TRISB         ; PORTB'yi çıkış olarak ayarla (Display modülü için)
+    BCF STATUS, RP0     ; Bank 0'a geri dön
+
+    ; Başlangıçta displayleri kapalı tutmak için PNP transistörlere 1 (High) gönder
+    MOVLW 0xF0          ; RB7:RB4 arası 1, RB3:RB0 arası 0
+    MOVWF PORTB
+
+ANA_DONGU:
+    ; 2. Buton Kontrolü (RA1 pinine bağlı olduğunu varsayıyoruz)
+    ; Devredeki pull-down direncine göre butona basıldığında Lojik 1 geldiğini varsayıyoruz.
+    BTFSC PORTA, 1      ; RA1 pini 0 ise bir sonraki satırı atla (butona basılmamış)
+    GOTO GOREV2         ; RA1 pini 1 ise (butona basıldıysa) GOREV2 etiketine git
+    
+    ; Butona basılmıyorsa ekranı kapalı tut
+    MOVLW 0xF0          ; Transistörleri kesimde tutmak için üst 4 bite 1 gönder
+    MOVWF PORTB
+    GOTO ANA_DONGU
+
+GOREV2:
+    ; LAB Görevlisi "3. Hanede grup numaranızı gösterin" dedi diyelim (Örnek: --4- )
+    ; Grup Numaranız: 4 (BCD karşılığı: 0100) -> RB3:RB0 bitlerine yazılacak.
+    ; Aktif Hane: 3. Hane (Q3). Q3'ün bağlı olduğu RB6'ya '0', diğerlerine '1' vermeliyiz.
+    ; RB7(Q4)=1, RB6(Q3)=0, RB5(Q2)=1, RB4(Q1)=1  => 1011
+    
+    ; Birleştirilmiş Binary: 1011 0100 (RB7'den RB0'a doğru)
+    
+    MOVLW b'10110100'   ; Binary formatta veriyi W kaydedicisine yükle
+    MOVWF PORTB         ; W'daki veriyi PORTB'ye gönder
+    
+    GOTO ANA_DONGU      ; Butona basılı olduğu sürece göstermeye devam etmesi için başa dön
+
+    END
