@@ -1,0 +1,55 @@
+    LIST P=16F628A
+    INCLUDE "p16f628a.inc"
+
+    ; RA5 pinine denk gelen bir butona yanlışlıkla basıldığında devrenin 
+    ; resetlenmemesi için MCLRE_OFF yapılmıştır.
+    __CONFIG _FOSC_INTOSCIO & _WDTE_OFF & _PWRTE_ON & _MCLRE_OFF & _BOREN_OFF & _LVP_OFF & _CPD_OFF & _CP_OFF
+
+    ORG 0x000
+    GOTO KURULUM
+
+KURULUM:
+    ; PORTA'yı dijital I/O olarak kullanabilmek için komparatörleri kapat
+    MOVLW 0x07
+    MOVWF CMCON
+
+    ; Bank 1'e geç
+    BSF STATUS, RP0
+
+    ; PORTA'yı Giriş (Butonlar için), PORTB'yi Çıkış (Gösterge için) yap
+    MOVLW 0xFF
+    MOVWF TRISA
+    CLRF TRISB
+
+    ; Bank 0'a dön
+    BCF STATUS, RP0
+
+    ; Başlangıçta ekranın kapalı olması için SONDUR'a git
+    GOTO SONDUR
+
+DONGU:
+    ; RA0 pinindeki butonu kontrol et (Basıldığında 0 (GND) geldiği varsayımıyla)
+    BTFSC PORTA, 0      ; RA0 pini 0 mı?
+    GOTO SONDUR         ; 1 ise (basılmadıysa) söndürmeye git
+    GOTO YAK            ; 0 ise (basıldıysa) rakamı yakmaya git
+
+YAK:
+    ; 4 hanede "7" göstermek için gerekli sinyaller:
+    ; 74LS47 için "7" BCD kodu: D=0, C=1, B=1, A=1
+    ; Tüm haneleri yakmak için PNP transistörler (Q1-Q4) Lojik 0 olmalı.
+    ; Kablo pin sırası (RB7'den RB0'a): Q4, D, Q3, C, Q2, B, Q1, A
+    ; Değer: 00010101 (Hex: 0x15)
+    MOVLW b'00010101'   
+    MOVWF PORTB
+    GOTO DONGU          ; Sürekli kontrol için başa dön
+
+SONDUR:
+    ; Ekranı karartmak için PNP transistörlerin (Q1, Q2, Q3, Q4) hepsine 
+    ; Lojik 1 gönderip kapatıyoruz.
+    ; Değer: 10101010 (Hex: 0xAA) - Veri bitleri 0, Q bitleri 1.
+    MOVLW b'10101010'   
+    MOVWF PORTB
+    GOTO DONGU          ; Sürekli kontrol için başa dön
+
+    END
+
