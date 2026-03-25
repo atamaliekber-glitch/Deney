@@ -1,0 +1,136 @@
+list p=16f628A
+    #include <p16F628A.inc>
+
+    __CONFIG _FOSC_INTOSCIO & _WDTE_OFF & _PWRTE_ON & _MCLRE_OFF & _BOREN_OFF & _LVP_OFF
+
+    ; Gecikme rutinleri için değişkenler
+d1  equ 0x20
+d2  equ 0x21
+d3  equ 0x22
+
+GRUP_NO equ b'00000101' ; [span_4](start_span)Grup numarasını 5 olarak varsaydım (BCD formatı)[span_4](end_span)
+
+    org 0x000
+    goto init
+
+init:
+    ; Komparatörleri kapatıp pinleri dijital I/O yapıyoruz
+    movlw 0x07
+    movwf CMCON     
+
+    ; Port yönlendirmeleri
+    bsf STATUS, RP0 ; Bank 1'e geç
+    clrf TRISA      ; PORTA'yı çıkış yap (Senin isteğin üzerine)
+    movlw 0xFF      
+    movwf TRISB     ; PORTB'yi giriş yap (Butonlar için)
+    bcf STATUS, RP0 ; Bank 0'a dön
+    clrf PORTA      ; Başlangıçta tüm çıkışları sıfırla
+
+main_loop:
+    btfsc PORTB, 0  ; 1. Butona basıldı mı?
+    goto gorev_1    ; [span_5](start_span)Basıldıysa Görev 1'e git[span_5](end_span)
+    
+    btfsc PORTB, 1  ; 2. Butona basıldı mı?
+    goto gorev_2    ; [span_6](start_span)Basıldıysa Görev 2'ye git[span_6](end_span)
+    
+    btfsc PORTB, 2  ; 3. Butona basıldı mı?
+    goto gorev_3    ; [span_7](start_span)Basıldıysa Görev 3'e git[span_7](end_span)
+    
+    btfsc PORTB, 3  ; 4. Butona basıldı mı?
+    goto gorev_4    ; [span_8](start_span)Basıldıysa Görev 4'e git (Multiplexing)[span_8](end_span)
+    
+    ; Hiçbirine basılmadıysa göstergeyi temizle
+    clrf PORTA
+    goto main_loop
+
+; ==========================================
+; [span_9](start_span)GÖREV 1: Tüm hanelerde Grup No (örn: 5555)[span_9](end_span)
+; ==========================================
+gorev_1:
+    ; Üst 4 bit (Hane seçimi - 1111), Alt 4 bit (Veri - 0101)
+    movlw b'11110101' 
+    movwf PORTA
+    goto main_loop
+
+; ==========================================
+; [span_10](start_span)GÖREV 2: Sadece 2. hanede Grup No (örn: --5-)[span_10](end_span)
+; ==========================================
+gorev_2:
+    ; Sadece 2. haneyi seçiyoruz (örn: RA6'yı aktif ettik)
+    movlw b'01000101' 
+    movwf PORTA
+    goto main_loop
+
+; ==========================================
+; [span_11](start_span)GÖREV 3: Kırpışan Gösterge (1 sn ON, 1 sn OFF)[span_11](end_span)
+; ==========================================
+gorev_3:
+    movlw b'11110101' ; Gösterge AÇIK
+    movwf PORTA
+    call delay_1s
+    
+    clrf PORTA        ; Gösterge KAPALI
+    call delay_1s
+    goto main_loop
+
+; ==========================================
+; [span_12](start_span)GÖREV 4: Dönüşümlü "1234" Görüntüleme (Multiplexing)[span_12](end_span)
+; ==========================================
+gorev_4:
+    ; 1. Hane: Veri '1'
+    movlw b'00010001' ; Q1 seçili, BCD=1
+    movwf PORTA
+    call delay_5ms
+    
+    ; 2. Hane: Veri '2'
+    movlw b'00100010' ; Q2 seçili, BCD=2
+    movwf PORTA
+    call delay_5ms
+    
+    ; 3. Hane: Veri '3'
+    movlw b'01000011' ; Q3 seçili, BCD=3
+    movwf PORTA
+    call delay_5ms
+    
+    ; 4. Hane: Veri '4'
+    movlw b'10000100' ; Q4 seçili, BCD=4
+    movwf PORTA
+    call delay_5ms
+    
+    ; Buton 4 hala basılıysa döngüde kalması için ana menüye dön
+    goto main_loop
+
+; ==========================================
+; GECİKME RUTİNLERİ
+; ==========================================
+delay_5ms:
+    ; 5 milisaniyelik gecikme (Tarama frekansı için)
+    movlw 0x05
+    movwf d1
+    movlw 0x2A
+    movwf d2
+delay_5ms_0
+    decfsz d2, f
+    goto $+2
+    decfsz d1, f
+    goto delay_5ms_0
+    return
+
+delay_1s:
+    ; 1 saniyelik gecikme (Görev 3 Kırpışma için)
+    movlw 0x06
+    movwf d1
+    movlw 0x13
+    movwf d2
+    movlw 0xA7
+    movwf d3
+delay_1s_0
+    decfsz d3, f
+    goto $+2
+    decfsz d2, f
+    goto $+2
+    decfsz d1, f
+    goto delay_1s_0
+    return
+
+    end
