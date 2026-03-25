@@ -1,0 +1,51 @@
+    LIST P=16F628A
+    INCLUDE "p16f628a.inc"
+
+    ; RA5'i kullanabilmek (en azından giriş olarak) MCLR'yi kapatıyoruz
+    __CONFIG _FOSC_INTOSCIO & _WDTE_OFF & _PWRTE_ON & _MCLRE_OFF & _BOREN_ON & _LVP_OFF & _CPD_OFF & _CP_OFF
+
+    ORG 0x000
+    GOTO MAIN
+
+MAIN:
+    ; Komparatörleri kapat, PORTA'yı dijital I/O yap
+    MOVLW 0x07
+    MOVWF CMCON
+
+    ; TRIS ayarları için Bank 1'e geç
+    BSF STATUS, RP0
+
+    ; Haşmetlimizin emri üzerine: PORTA çıkış, PORTB giriş
+    MOVLW 0x00
+    MOVWF TRISA         ; PORTA'nın tüm pinleri çıkış (RA5 hariç, o donanımsal olarak giriş kalır)
+    
+    MOVLW 0xFF
+    MOVWF TRISB         ; PORTB'nin tüm pinleri giriş (Butonlar için)
+
+    ; Bank 0'a geri dön
+    BCF STATUS, RP0
+
+DONGU:
+    ; RB0 pinindeki butonu kontrol et (Butona basıldı mı?)
+    ; BTFSC: Eğer bit 0 ise (butona basıldıysa) bir sonraki komutu atla
+    BTFSC PORTB, 0  
+    GOTO SONDUR         ; Butona basılmıyorsa (1 ise) ekranı söndürmeye git
+    GOTO YAK            ; Butona basılıyorsa (0 ise) 7 yakmaya git
+
+YAK:
+    ; BCD "7" Kodu: D=0, C=1, B=1, A=1 -> 0111 (İlk 4 bit)
+    ; PNP Transistörleri (Q4,Q3,Q2,Q1) açmak için -> 0000 (Son 4 bit)
+    ; Birleşik Veri: b'00000111' (Hex: 0x07)
+    MOVLW b'00000111' 
+    MOVWF PORTA
+    GOTO DONGU          ; Sürekli kontrol için başa dön
+
+SONDUR:
+    ; Buton bırakıldığında ekranı karartmak için transistörlere (Q1-Q4) Lojik 1 gönderiyoruz.
+    ; İlk 4 bitin (rakam verisi) bir önemi yok, transistörler kapanınca ekran söner.
+    MOVLW b'11110000'   ; (Hex: 0xF0)
+    MOVWF PORTA
+    GOTO DONGU          ; Sürekli kontrol için başa dön
+
+    END
+
