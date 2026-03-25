@@ -1,0 +1,36 @@
+    LIST P=16F628A
+    INCLUDE "p16f628a.inc"
+
+    __CONFIG _FOSC_INTOSCIO & _WDTE_OFF & _PWRTE_ON & _MCLRE_ON & _BOREN_ON & _LVP_OFF & _CPD_OFF & _CP_OFF
+
+    ORG 0x000
+    GOTO MAIN
+
+MAIN:
+    MOVLW 0x07          ; PortA'yı dijital I/O yap (Komparatörleri kapat)
+    MOVWF CMCON
+
+    BSF STATUS, RP0     ; Bank 1'e geç
+    MOVLW 0xFF          
+    MOVWF TRISA         ; A Portunu tümüyle giriş (Input) yap (Buton için)
+    CLRF TRISB          ; B Portunu tümüyle çıkış (Output) yap (Gösterge için)
+    BCF STATUS, RP0     ; Bank 0'a dön
+
+DONGU:
+    BTFSC PORTA, 0      ; RA0 pinini kontrol et (Buton pini 0'a mı çekiyor?)
+    GOTO TEMIZLE        ; Pin 1 ise (basılmadıysa) ekranı kapatmaya git
+    GOTO GOSTER         ; Pin 0 ise (basıldıysa) rakam göstermeye git
+
+GOSTER:
+    ; Yeni pin dizilimine göre "4" rakamı ve tüm hanelerin yanması için
+    MOVLW b'00010000'   ; (Hex: 0x10) 
+    MOVWF PORTB
+    GOTO DONGU
+
+TEMIZLE:
+    ; Ekranı karartmak için transistör pinlerine (RB1, RB3, RB5, RB7) 1 gönder
+    MOVLW b'10101010'   ; (Hex: 0xAA)
+    MOVWF PORTB
+    GOTO DONGU
+
+    END
