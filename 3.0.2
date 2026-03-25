@@ -1,0 +1,48 @@
+LIST P=16F628A
+#INCLUDE <P16F628A.INC>
+
+; Konfigürasyon ayarları (Dahili osilatör, Watchdog kapalı, MCLR açık vb.)
+__CONFIG _FOSC_INTOSCIO & _WDTE_OFF & _PWRTE_ON & _MCLRE_ON & _BOREN_OFF & _LVP_OFF & _CPD_OFF & _CP_OFF
+
+ORG 0x00
+GOTO BASLA
+
+BASLA
+    ; Komparatörleri kapat, PORTA'yı dijital I/O yap (Çok önemli!)
+    MOVLW 0x07
+    MOVWF CMCON
+
+    ; Bank 1'e geç (TRIS ayarları için)
+    BSF STATUS, RP0
+
+    ; PORTA'yı giriş yap (1 = Giriş)
+    MOVLW 0xFF
+    MOVWF TRISA
+
+    ; PORTB'yi çıkış yap (0 = Çıkış)
+    CLRF TRISB
+
+    ; Bank 0'a dön (PORT işlemleri için)
+    BCF STATUS, RP0
+
+    ; Başlangıçta PORTB'yi temizle (Tüm ledleri söndür)
+    CLRF PORTB
+
+DONGU
+    ; PORTA'nın 0. bitini (Buton 0) kontrol et.
+    ; Eğer buton basılıysa (Lojik 1 ise) BTFSC komutu atlamaz, alt satıra geçer.
+    ; Not: Donanımınızda buton basılmadığında 0, basıldığında 1 geldiği varsayılmıştır (Pull-down).
+    BTFSC PORTA, 0      
+    GOTO LEDLERI_YAK    ; Buton 1 ise LED'leri yakmaya git
+
+LEDLERI_SONDUR
+    CLRF PORTB          ; PORTB'yi tamamen sıfırla (Bütün LED'ler söner)
+    GOTO DONGU          ; Ana döngüye dön
+
+LEDLERI_YAK
+    MOVLW 0xFF          ; W kaydedicisine 0xFF (Yani binary 11111111) yükle
+    MOVWF PORTB         ; W'deki değeri PORTB'ye yaz (Bütün LED'ler yanar)
+    GOTO DONGU          ; Ana döngüye dön
+
+END
+
