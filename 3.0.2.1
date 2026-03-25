@@ -1,0 +1,46 @@
+LIST P=16F628A
+#INCLUDE <P16F628A.INC>
+
+; Konfigürasyon ayarları (Dahili osilatör aktif, RA6 ve RA7 I/O olarak kullanılabilir)
+__CONFIG _FOSC_INTOSCIO & _WDTE_OFF & _PWRTE_ON & _MCLRE_ON & _BOREN_OFF & _LVP_OFF & _CPD_OFF & _CP_OFF
+
+ORG 0x00
+GOTO BASLA
+
+BASLA
+    ; Komparatörleri kapat, PORTA'yı dijital I/O yap
+    MOVLW 0x07
+    MOVWF CMCON
+
+    ; Bank 1'e geç
+    BSF STATUS, RP0
+
+    ; PORTA'yı giriş yap (1 = Giriş)
+    MOVLW 0xFF
+    MOVWF TRISA
+
+    ; PORTB'yi çıkış yap (0 = Çıkış)
+    CLRF TRISB
+
+    ; Bank 0'a dön
+    BCF STATUS, RP0
+
+    ; Başlangıçta PORTB'yi temizle (Tüm ledleri söndür)
+    CLRF PORTB
+
+DONGU
+    ; SADECE BU SATIR DEĞİŞTİ: PORTA'nın 7. bitini (Buton 7) kontrol et.
+    BTFSC PORTA, 7      
+    GOTO LEDLERI_YAK    ; Buton basılıysa LED'leri yakmaya git
+
+LEDLERI_SONDUR
+    CLRF PORTB          ; PORTB'yi sıfırla (Bütün LED'ler söner)
+    GOTO DONGU          ; Ana döngüye dön
+
+LEDLERI_YAK
+    MOVLW 0xFF          ; W kaydedicisine 0xFF yükle
+    MOVWF PORTB         ; W'deki değeri PORTB'ye yaz (Bütün LED'ler yanar)
+    GOTO DONGU          ; Ana döngüye dön
+
+END
+
