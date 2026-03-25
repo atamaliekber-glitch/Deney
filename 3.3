@@ -1,0 +1,120 @@
+    LIST P=16F628A
+    INCLUDE <P16F628A.INC>
+    
+    ; Konfigürasyon Ayarları (Dahili Osilatör kullanıyoruz, 4MHz)
+    __CONFIG _FOSC_INTOSCIO & _WDTE_OFF & _PWRTE_ON & _MCLRE_ON & _BOREN_OFF & _LVP_OFF & _CPD_OFF & _CP_OFF
+
+    ; --- DEĞİŞKEN TANIMLAMALARI ---
+    CBLOCK 0x20
+        d1          ; Gecikme döngüleri için sayaç 1
+        d2          ; Gecikme döngüleri için sayaç 2
+        d3          ; Gecikme döngüleri için sayaç 3
+        tarama_sayaci ; 1 saniyelik yanma süresini ayarlamak için sayaç
+    ENDC
+
+    ORG 0x000
+    GOTO BASLA
+
+BASLA:
+    ; PORTA pinlerindeki komparatörleri (karşılaştırıcıları) kapat ki dijital giriş/çıkış olarak kullanılabilsin
+    MOVLW 0x07
+    MOVWF CMCON
+
+    ; Port Yönlendirmeleri (Giriş/Çıkış ayarları)
+    BSF STATUS, RP0     ; Bank 1'e geç
+    MOVLW 0xFF          ; Tüm bitler 1 (Giriş)
+    MOVWF TRISA         ; PORTA'yı giriş yap (Buton okumak için)
+    CLRF TRISB          ; PORTB'nin tüm bitlerini 0 (Çıkış) yap (Display için)
+    BCF STATUS, RP0     ; Bank 0'a geri dön
+
+    CLRF PORTB          ; Başlangıçta displayleri temizle
+
+BUTON_BEKLE:
+    ; RA0 pinindeki butona basılmasını bekle.
+    ; (Kitlerde genellikle butona basılınca 1 gelir, biz de 1 olmasını bekliyoruz)
+    BTFSS PORTA, 0      ; RA0 1 oldu mu? (Basıldı mı?)
+    GOTO BUTON_BEKLE    ; Hayırsa beklemeye devam et
+
+YANIP_SONME_DONGUSU:
+    ; --- 1 SANİYE BOYUNCA EKRANDA GRUP NUMARASINI GÖSTER ---
+    ; Tarama işlemini (yaklaşık 20ms sürer) 50 kere tekrar edersek 1 saniye yanmış olur.
+    MOVLW d'50'         
+    MOVWF tarama_sayaci
+
+TARAMA:
+    ; 1. Display (En Sol)
+    ; RB7-RB4 = 1110 (Q1 aktif, diğerleri kapalı), RB3-RB0 = 0011 (Sayı: 3)
+    MOVLW b'11100011'   
+    MOVWF PORTB
+    CALL GECIKME_5MS
+
+    ; 2. Display
+    ; RB7-RB4 = 1101 (Q2 aktif)
+    MOVLW b'11010011'   
+    MOVWF PORTB
+    CALL GECIKME_5MS
+
+    ; 3. Display
+    ; RB7-RB4 = 1011 (Q3 aktif)
+    MOVLW b'10110011'   
+    MOVWF PORTB
+    CALL GECIKME_5MS
+
+    ; 4. Display (En Sağ)
+    ; RB7-RB4 = 0111 (Q4 aktif)
+    MOVLW b'01110011'   
+    MOVWF PORTB
+    CALL GECIKME_5MS
+
+    DECFSZ tarama_sayaci, F ; Sayacı 1 azalt, 0 olmadıysa taramaya devam et
+    GOTO TARAMA
+
+    ; --- 1 SANİYE BOYUNCA EKRANI KARART ---
+    ; Bütün transistörleri kapatmak için RB4-RB7 pinlerine 1 gönderilir. (PNP 1 ile kapanır)
+    MOVLW b'11110000'   ; Sadece transistörleri kapatıyoruz, veri önemli değil
+    MOVWF PORTB
+    CALL GECIKME_1S     ; 1 Saniye bekle
+
+    ; İşlemi sürekli tekrar et (Kırpışma efekti için)
+    GOTO YANIP_SONME_DONGUSU
+
+
+; --- ALT PROGRAMLAR (GECİKMELER) ---
+
+; Yaklaşık 5 Milisaniye Gecikme (Tarama frekansı için)
+GECIKME_5MS:
+    MOVLW d'5'
+    MOVWF d2
+G5_DONGU:
+    MOVLW d'249'
+    MOVWF d1
+G5_IC:
+    NOP
+    DECFSZ d1, F
+    GOTO G5_IC
+    DECFSZ d2, F
+    GOTO G5_DONGU
+    RETURN
+
+; Yaklaşık 1 Saniye Gecikme (Karartma süresi için)
+GECIKME_1S:
+    MOVLW d'10'      
+    MOVWF d3
+G1_DIS:
+    MOVLW d'200'
+    MOVWF d2
+G1_ORTA:
+    MOVLW d'166'
+    MOVWF d1
+G1_IC:
+    NOP
+    DECFSZ d1, F
+    GOTO G1_IC
+    DECFSZ d2, F
+    GOTO G1_ORTA
+    DECFSZ d3, F
+    GOTO G1_DIS
+    RETURN
+
+    END
+
