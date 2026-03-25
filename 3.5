@@ -1,0 +1,87 @@
+    LIST P=16F628A
+    INCLUDE <P16F628A.INC>
+    
+    ; Konfigürasyon ayarları (Dahili osilatör, Watchdog kapalı vs.)
+    __CONFIG _FOSC_INTOSCIO & _WDTE_OFF & _PWRTE_ON & _MCLRE_ON & _BOREN_OFF & _LVP_OFF & _CPD_OFF & _CP_OFF
+
+    ; Değişken tanımlamaları
+    CBLOCK 0x20
+    SAYAC1
+    SAYAC2
+    ENDC
+
+    ORG 0x000
+    GOTO BASLA
+
+BASLA:
+    ; PortA'daki analog karşılaştırıcıları kapatıp dijital I/O yapalım
+    MOVLW 0x07
+    MOVWF CMCON
+
+    ; Giriş/Çıkış Ayarları (Bank 1)
+    BSF STATUS, RP0     
+    CLRF TRISB          ; PortB'nin tamamı çıkış (Display veri ve kontrol)
+    MOVLW 0xFF          
+    MOVWF TRISA         ; PortA'nın tamamı giriş (Butonlar için)
+    BCF STATUS, RP0     ; Bank 0'a dön
+    
+    CLRF PORTB          ; PortB'yi temizle
+
+KONTROL:
+    BTFSS PORTA, 0      ; RA0 butonuna basıldı mı? (Lojik 1 bekleniyor)
+    GOTO KONTROL        ; Basılmadıysa beklemeye devam et
+
+GOSTER:
+    ; --- 1. HANE (Binler Basamağı) -> '1' ---
+    ; Değer BCD: 0001
+    ; Q1 Aktif (RB4=0), diğerleri pasif (RB5,6,7 = 1) -> 1110 0001 (0xE1)
+    MOVLW 0xE1
+    MOVWF PORTB
+    CALL GECIKME
+
+    ; --- 2. HANE (Yüzler Basamağı) -> '2' ---
+    ; Değer BCD: 0010
+    ; Q2 Aktif (RB5=0), diğerleri pasif (RB4,6,7 = 1) -> 1101 0010 (0xD2)
+    MOVLW 0xD2
+    MOVWF PORTB
+    CALL GECIKME
+
+    ; --- 3. HANE (Onlar Basamağı) -> '3' ---
+    ; Değer BCD: 0011
+    ; Q3 Aktif (RB6=0), diğerleri pasif (RB4,5,7 = 1) -> 1011 0011 (0xB3)
+    MOVLW 0xB3
+    MOVWF PORTB
+    CALL GECIKME
+
+    ; --- 4. HANE (Birler Basamağı) -> '4' ---
+    ; Değer BCD: 0100
+    ; Q4 Aktif (RB7=0), diğerleri pasif (RB4,5,6 = 1) -> 0111 0100 (0x74)
+    MOVLW 0x74
+    MOVWF PORTB
+    CALL GECIKME
+
+    ; Butona basılı tutulduğu sürece göstermeye devam et
+    BTFSC PORTA, 0      
+    GOTO GOSTER         ; RA0 hala 1 ise taramaya devam et
+    GOTO KONTROL        ; Buton bırakıldıysa başa dön
+
+; ====================================================================
+; 5. AŞAMA İÇİN GECİKME (DELAY) ALT PROGRAMI
+; ====================================================================
+GECIKME:
+    ; NOT: 5. aşamadaki gözlemleriniz için aşağıdaki 'd'20'' değerini 
+    ; değiştireceksiniz.
+    MOVLW d'20'         ; *** SÜRE AYAR DEĞERİ (SAYAC2 için) ***
+    MOVWF SAYAC2
+DONGU2:
+    MOVLW d'80'         ; İç döngü değeri (SAYAC1 için)
+    MOVWF SAYAC1
+DONGU1:
+    DECFSZ SAYAC1, F
+    GOTO DONGU1
+    DECFSZ SAYAC2, F
+    GOTO DONGU2
+    RETURN
+
+    END
+
