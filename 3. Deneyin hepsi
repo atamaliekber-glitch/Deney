@@ -1,0 +1,124 @@
+;----------------------------------------------------------------------
+; MİKROİŞLEMCİLER LAB - DENEY 3: 7 PARÇALI LED GÖSTERGE KULLANIMI
+; İşlemci: PIC16F628A
+; PORTA: Buton Girişleri (RA0 - RA3)
+; PORTB: Çıkışlar. RB0-RB3 -> 7447 Veri (A,B,C,D) | RB4-RB7 -> Display Seçici (Q1,Q2,Q3,Q4)
+;----------------------------------------------------------------------
+
+    LIST P=16F628A
+    INCLUDE "P16F628A.INC"
+    
+    ; Konfigürasyon Ayarları (Dahili osilatör, Watchdog kapalı vs.)
+    __CONFIG _INTRC_OSC_NOCLKOUT & _WDT_OFF & _PWRTE_ON & _MCLRE_ON & _BODEN_OFF & _LVP_OFF & _CP_OFF
+
+    ; --- Değişken Tanımlamaları ---
+SAYAC1  EQU 0x20
+SAYAC2  EQU 0x21
+SAYAC3  EQU 0x22
+
+    ORG 0x000
+    GOTO BASLA
+
+BASLA
+    ; --- Port Kurulumları ---
+    MOVLW 0x07      ; PORTA'daki analog komparatörleri kapat, dijital I/O yap
+    MOVWF CMCON
+    
+    BSF STATUS, RP0 ; Bank 1'e geç
+    MOVLW h'FF'     ; PORTA'nın tüm pinlerini giriş (Input) yap
+    MOVWF TRISA
+    CLRF TRISB      ; PORTB'nin tüm pinlerini çıkış (Output) yap
+    BCF STATUS, RP0 ; Bank 0'a geri dön
+    
+    CLRF PORTB      ; Başlangıçta tüm çıkışları sıfırla
+
+ANA_DONGU
+    ; --- Buton Kontrolleri ---
+    BTFSC PORTA, 0  ; 1. Butona basıldı mı? (RA0 = 1 ise atla)
+    GOTO GOREV1     ; Basıldıysa Görev 1'e git (Tüm hanelerde grup no)
+    
+    BTFSC PORTA, 1  ; 2. Butona basıldı mı?
+    GOTO GOREV2     ; Basıldıysa Görev 2'ye git (Tek hanede grup no)
+    
+    BTFSC PORTA, 2  ; 3. Butona basıldı mı?
+    GOTO GOREV3     ; Basıldıysa Görev 3'e git (Kırpışma - Blinking)
+    
+    BTFSC PORTA, 3  ; 4. Butona basıldı mı?
+    GOTO GOREV4     ; Basıldıysa Görev 4'e git (1234 taraması)
+    
+    CLRF PORTB      ; Hiçbirine basılmadıysa ekranı temizle
+    GOTO ANA_DONGU  ; Ana döngüye dön
+
+;----------------------------------------------------------------------
+; GÖREV 1: Tüm hanelerde grup numarası (Örnek: '5' -> 0101)
+;----------------------------------------------------------------------
+GOREV1
+    ; RB7-RB4: 1111 (Tüm Q pinleri aktif), RB3-RB0: 0101 (BCD 5)
+    MOVLW b'11110101' 
+    MOVWF PORTB
+    GOTO ANA_DONGU
+
+;----------------------------------------------------------------------
+; GÖREV 2: Belirli bir hanede grup numarası (Örnek: Q3 aktif)
+;----------------------------------------------------------------------
+GOREV2
+    ; RB7-RB4: 0100 (Sadece Q3 aktif), RB3-RB0: 0101 (BCD 5)
+    MOVLW b'01000101' 
+    MOVWF PORTB
+    GOTO ANA_DONGU
+
+;----------------------------------------------------------------------
+; GÖREV 3: 1 Saniye Yanıp 1 Saniye Sönme (Kırpışma)
+;----------------------------------------------------------------------
+GOREV3
+    MOVLW b'11110101' ; Ekranı Aç (Grup no: 5555)
+    MOVWF PORTB
+    CALL GECIKME_1SN  ; 1 Saniye bekle
+    
+    CLRF PORTB        ; Ekranı Kapat (Tüm portları sıfırla)
+    CALL GECIKME_1SN  ; 1 Saniye bekle
+    
+    GOTO ANA_DONGU
+
+;----------------------------------------------------------------------
+; GÖREV 4: Dönüşümlü Tarama (Multiplexing) ile "1234" Yazdırma
+;----------------------------------------------------------------------
+GOREV4
+    ; 1. Hane: Sadece Q1 aktif (0001), Veri: 1 (0001)
+    MOVLW b'00010001' 
+    MOVWF PORTB
+    CALL GECIKME_5MS  ; İnsan gözünün algılamaması için 5ms bekle
+    
+    ; 2. Hane: Sadece Q2 aktif (0010), Veri: 2 (0010)
+    MOVLW b'00100010' 
+    MOVWF PORTB
+    CALL GECIKME_5MS
+    
+    ; 3. Hane: Sadece Q3 aktif (0100), Veri: 3 (0011)
+    MOVLW b'01000011' 
+    MOVWF PORTB
+    CALL GECIKME_5MS
+    
+    ; 4. Hane: Sadece Q4 aktif (1000), Veri: 4 (0100)
+    MOVLW b'10000100' 
+    MOVWF PORTB
+    CALL GECIKME_5MS
+    
+    ; Tarama işleminin sürekli olması için ana döngüye dön. 
+    ; Eğer butona hala basılıyorsa tekrar GOREV4'e girecektir.
+    GOTO ANA_DONGU
+
+;----------------------------------------------------------------------
+; GECİKME (DELAY) ALT PROGRAMLARI
+; Not: Mikrodenetleyicinin çalışma frekansına (örneğin 4MHz) göre 
+; döngü (loop) değerleri hesaplanmalıdır.
+;----------------------------------------------------------------------
+GECIKME_5MS
+    ; ... 5 ms bekleme döngüsü buraya yazılacak ...
+    RETURN
+
+GECIKME_1SN
+    ; ... 1 saniyelik bekleme döngüsü buraya yazılacak ...
+    RETURN
+
+    END
