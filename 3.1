@@ -1,0 +1,50 @@
+    LIST P=16F628A
+    INCLUDE "p16f628a.inc"
+
+    ; Konfigürasyon Ayarları (Dahili osilatör, Watchdog kapalı vs.)
+    __CONFIG _FOSC_INTOSCIO & _WDTE_OFF & _PWRTE_ON & _MCLRE_ON & _BOREN_ON & _LVP_OFF & _CPD_OFF & _CP_OFF
+
+    ORG 0x000
+    GOTO MAIN
+
+MAIN:
+    ; PORTA'daki pinleri dijital I/O yapmak için komparatörleri kapat
+    MOVLW 0x07
+    MOVWF CMCON
+
+    ; Bank 1'e geç (TRIS registerlarına erişim için)
+    BSF STATUS, RP0
+
+    ; TRISA ayarları: RA0 pinini giriş (Input) yap (Buton için)
+    MOVLW 0xFF
+    MOVWF TRISA
+
+    ; TRISB ayarları: Tüm B portunu çıkış (Output) yap (Display için)
+    CLRF TRISB
+
+    ; Bank 0'a geri dön
+    BCF STATUS, RP0
+
+DONGU:
+    ; RA0 pinini kontrol et (Butona basıldı mı?)
+    ; BTFSC: Bit Test File, Skip if Clear (Eğer RA0 '0' ise bir sonraki komutu atla)
+    BTFSC PORTA, 0  
+    GOTO TEMIZLE    ; Butona basılmadıysa (1 ise) göstergeyi kapatmaya git
+    GOTO GOSTER     ; Butona basıldıysa (0 ise) 4444 göstermeye git
+
+GOSTER:
+    ; "4" rakamı için BCD kodu: D=0, C=1, B=0, A=0 -> 0100
+    ; Tüm displayleri yakmak için (Q4, Q3, Q2, Q1) -> 0000 (PNP oldukları için 0'da yanarlar)
+    ; Birleştirilmiş PORTB verisi: b'00000100' (Hex: 0x04)
+    MOVLW b'00000100' 
+    MOVWF PORTB
+    GOTO DONGU      ; Sürekli kontrol için başa dön
+
+TEMIZLE:
+    ; Butona basılmadığında ekranı kapatmak için transistörlere (RB4-RB7) 1 göndermeliyiz.
+    ; Veri pinlerinin önemi yok ama transistörleri 1 yapmak ekranı karartır.
+    MOVLW b'11110000' ; (Hex: 0xF0)
+    MOVWF PORTB
+    GOTO DONGU      ; Sürekli kontrol için başa dön
+
+    END
