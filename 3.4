@@ -1,0 +1,93 @@
+    LIST P=16F628A
+    INCLUDE "P16F628A.INC"
+    __CONFIG _FOSC_INTOSCCLK & _WDTE_OFF & _PWRTE_ON & _MCLRE_ON & _BOREN_OFF & _LVP_OFF & _CPD_OFF & _CP_OFF
+
+    ; --- DEĞİŞKEN TANIMLAMALARI ---
+    CBLOCK 0x20
+        SAYAC1
+        SAYAC2
+    ENDC
+
+    ORG 0x000
+    GOTO BASLA
+
+BASLA
+    ; --- PORT AYARLARI ---
+    BCF STATUS, RP1
+    BSF STATUS, RP0     ; Bank 1'e geç
+    
+    MOVLW 0x01          ; RA0 giriş (buton), diğer A portu pinleri çıkış
+    MOVWF TRISA
+    
+    CLRF TRISB          ; PORTB'nin tamamı çıkış (Data ve Transistör kontrolü)
+    
+    BCF STATUS, RP0     ; Bank 0'a dön
+
+    ; --- CMCON AYARI ---
+    ; PIC16F628A'da PortA pinlerini dijital giriş/çıkış olarak 
+    ; kullanabilmek için komparatörleri kapatmalıyız.
+    MOVLW 0x07
+    MOVWF CMCON
+
+ANA_DONGU
+    BTFSS PORTA, 0      ; RA0'daki butona basıldı mı? (Basılınca 1 olduğunu varsayıyoruz)
+    GOTO ANA_DONGU      ; Basılmadıysa beklemeye devam et
+
+GOSTER
+    ; 1. HANE (Binler - '1' yazacak) -> Q1 transistörü iletimde (RB4=0)
+    ; Veri: BCD '1' -> 0001
+    ; Çıktı: 1110 0001 (0xE1)
+    MOVLW 0xE1
+    MOVWF PORTB
+    CALL GECIKME
+    ; Gölgelenmeyi (ghosting) önlemek için geçişte ekranı anlık temizle
+    MOVLW 0xF0          ; Tüm transistörler kapalı (1111)
+    MOVWF PORTB
+
+    ; 2. HANE (Yüzler - '2' yazacak) -> Q2 transistörü iletimde (RB5=0)
+    ; Veri: BCD '2' -> 0010
+    ; Çıktı: 1101 0010 (0xD2)
+    MOVLW 0xD2
+    MOVWF PORTB
+    CALL GECIKME
+    MOVLW 0xF0
+    MOVWF PORTB
+
+    ; 3. HANE (Onlar - '3' yazacak) -> Q3 transistörü iletimde (RB6=0)
+    ; Veri: BCD '3' -> 0011
+    ; Çıktı: 1011 0011 (0xB3)
+    MOVLW 0xB3
+    MOVWF PORTB
+    CALL GECIKME
+    MOVLW 0xF0
+    MOVWF PORTB
+
+    ; 4. HANE (Birler - '4' yazacak) -> Q4 transistörü iletimde (RB7=0)
+    ; Veri: BCD '4' -> 0100
+    ; Çıktı: 0111 0100 (0x74)
+    MOVLW 0x74
+    MOVWF PORTB
+    CALL GECIKME
+    MOVLW 0xF0
+    MOVWF PORTB
+
+    GOTO GOSTER         ; Sürekli tarama yapmak için başa dön
+
+; --- GECİKME ALT PROGRAMI (~5ms) ---
+; 4MHz dahili osilatör kullanıldığı varsayılmıştır (Her komut döngüsü 1 mikrosaniye)
+GECIKME
+    MOVLW d'5'
+    MOVWF SAYAC1
+DONGU1
+    MOVLW d'250'
+    MOVWF SAYAC2
+DONGU2
+    NOP
+    DECFSZ SAYAC2, F
+    GOTO DONGU2
+    DECFSZ SAYAC1, F
+    GOTO DONGU1
+    RETURN
+
+    END
+
