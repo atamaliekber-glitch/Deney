@@ -1,0 +1,46 @@
+    LIST P=16F628A
+    INCLUDE "p16f628a.inc"
+    
+    ; Konfigürasyon ayarları: Dahili osilatör, Watchdog kapalı, MCLR dahili (RA5 giriş olur)
+    __CONFIG _FOSC_INTOSCIO & _WDTE_OFF & _PWRTE_ON & _MCLRE_OFF & _BODEN_OFF & _LVP_OFF & _CPD_OFF & _CP_OFF
+
+    ORG 0x00            ; Program başlangıç adresi
+
+BASLA
+    ; Komparatörleri kapat (PORTA'yı dijital I/O yapmak için zorunludur)
+    MOVLW 0x07
+    MOVWF CMCON
+
+    ; Bank 1'e geç (TRIS ayarları için)
+    BSF STATUS, RP0
+
+    ; PORTA'yı çıkış (0x00), PORTB'yi giriş (0xFF) yap
+    MOVLW 0x00
+    MOVWF TRISA
+    MOVLW 0xFF
+    MOVWF TRISB
+
+    ; Bank 0'a geri dön
+    BCF STATUS, RP0
+
+    ; Başlangıçta tüm LED'leri söndür
+    CLRF PORTA
+
+ANA_DONGU
+    ; RB0 pinini (Buton 0) kontrol et
+    ; Not: Butonun "Aktif High" (basılınca 1 veren) olduğu varsayılmıştır.
+    BTFSC PORTB, 0      ; Eğer RB0 '0' ise bir sonraki komutu atla
+    GOTO LED_YAK        ; RB0 '1' ise (butona basılmışsa) LED_YAK etiketine git
+    GOTO LED_SONDUR     ; RB0 '0' ise (butona basılmamışsa) LED_SONDUR etiketine git
+
+LED_YAK
+    MOVLW 0xFF          ; W kaydedicisine b'11111111' (0xFF) yükle
+    MOVWF PORTA         ; Tüm PORTA pinlerini Lojik 1 yap (LED'leri yak)
+    GOTO ANA_DONGU      ; Durumu kontrol etmeye devam et
+
+LED_SONDUR
+    CLRF PORTA          ; PORTA'yı temizle (Tüm LED'leri söndür)
+    GOTO ANA_DONGU      ; Durumu kontrol etmeye devam et
+
+    END
+
