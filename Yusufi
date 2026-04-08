@@ -1,0 +1,124 @@
+;*******************************************************************
+; 4 Haneli Şifreleme Cihazı Donanım/Yazılım Tasarımı
+; Mikrodenetleyici: PIC16 Serisi (Örn: 16F628A / 16F877A)
+;*******************************************************************
+
+    LIST P=16F628A
+    #INCLUDE <P16F628A.INC>
+    
+    __CONFIG _BODEN_ON & _CP_OFF & _DATA_CP_OFF & _PWRTE_ON & _WDT_OFF & _LVP_OFF & _MCLRE_ON & _INTOSC_OSC_NOCLKOUT
+
+;--- DEĞİŞKENLER (RAM) ---
+CBLOCK 0x20
+    HANE1       ; 1. Display'de gösterilecek 7447 verisi
+    HANE2       ; 2. Display'de gösterilecek 7447 verisi
+    HANE3       ; 3. Display'de gösterilecek 7447 verisi
+    HANE4       ; 4. Display'de gösterilecek 7447 verisi
+    GIRIS1      ; RA0, RA1'den okunan ham veri
+    GIRIS2      ; RA2, RA3'ten okunan ham veri
+    SAYAC1      ; Gecikme sayacı
+    SAYAC2
+ENDC
+
+    ORG 0x000
+    GOTO BASLA
+
+;--- ALT PROGRAM: KOD ÇEVRİM TABLOSU (TABLO.1) ---
+; W register'ı ile gelen 2-bitlik değeri (0,1,2,3) 7447 koduna çevirir.
+CEVRIM_TABLOSU
+    ADDWF PCL, F
+    RETLW b'00000011'   ; Giriş 00 ise -> Çıkış: '3' (0011)
+    RETLW b'00000111'   ; Giriş 01 ise -> Çıkış: '7' (0111)
+    RETLW b'00001001'   ; Giriş 10 ise -> Çıkış: '9' (1001)
+    RETLW b'00001101'   ; Giriş 11 ise -> Çıkış: 'c' (1101)
+
+;--- ANA PROGRAM ---
+BASLA
+    MOVLW 0x07
+    MOVWF CMCON         ; PORTA analog girişlerini dijitale çevir (Önemli!)
+
+    BSF STATUS, RP0     ; Bank 1'e geç
+    MOVLW h'FF'
+    MOVWF TRISA         ; PORTA'nın tamamı giriş
+    CLRF TRISB          ; PORTB'nin tamamı çıkış
+    BCF STATUS, RP0     ; Bank 0'a dön
+
+ANA_DONGU
+    ; 1. GİRİŞİ OKU VE ÇEVİR (RA0, RA1)
+    MOVF PORTA, W
+    ANDLW b'00000011'   ; Sadece ilk iki biti maskele (Giris 1)
+    MOVWF GIRIS1
+    CALL CEVRIM_TABLOSU ; Tabloya git ve karşılığını W'ye al
+    MOVWF HANE1         ; 1. Hane verisi hazır
+
+    ; 2. GİRİŞİ OKU VE ÇEVİR (RA2, RA3)
+    MOVF PORTA, W
+    ANDLW b'00001100'   ; Sadece RA2 ve RA3 bitlerini maskele
+    MOVWF GIRIS2
+    RRF GIRIS2, F       ; Veriyi sağa kaydır (Bit 1 ve 0'a oturtmak için)
+    RRF GIRIS2, W       ; Şimdi W'de 00, 01, 10 veya 11 var
+    CALL CEVRIM_TABLOSU
+    MOVWF HANE2         ; 2. Hane verisi hazır
+
+    ; ŞİFREYİ TAMAMLAMAK İÇİN 3. VE 4. HANELERİ ÜRET (Örnek Şifreleme Mantığı)
+    ; Örnek: 3. Hane, Giriş 1 ve Giriş 2'nin XOR'lanmış hali olsun
+    MOVF GIRIS1, W
+    XORWF GIRIS2, W
+    ANDLW b'00000011'
+    CALL CEVRIM_TABLOSU
+    MOVWF HANE3
+
+    ; Örnek: 4. Hane sabit bir değer veya Girişlerin AND'lenmiş hali olsun
+    MOVF GIRIS1, W
+    ANDWF GIRIS2, W
+    ANDLW b'00000011'
+    CALL CEVRIM_TABLOSU
+    MOVWF HANE4
+
+;--- MULTIPLEXING (TARAMA) EKRAN GÖSTERİMİ ---
+Gosterge_Tarama
+    ; HANE 1'i YAK (Q1 Aktif - Örn: RB4 = 1)
+    MOVF HANE1, W
+    IORLW b'00010000'   ; Q1(RB4) seçici bitini 1 yap, Data'yı bozma
+    MOVWF PORTB
+    CALL GECIKME
+    CLRF PORTB          ; Hayalet ekran (ghosting) olmaması için portu temizle
+
+    ; HANE 2'yi YAK (Q2 Aktif - Örn: RB5 = 1)
+    MOVF HANE2, W
+    IORLW b'00100000'   ; Q2(RB5) seçici bitini 1 yap
+    MOVWF PORTB
+    CALL GECIKME
+    CLRF PORTB
+
+    ; HANE 3'ü YAK (Q3 Aktif - Örn: RB6 = 1)
+    MOVF HANE3, W
+    IORLW b'01000000'   ; Q3(RB6) seçici bitini 1 yap
+    MOVWF PORTB
+    CALL GECIKME
+    CLRF PORTB
+
+    ; HANE 4'ü YAK (Q4 Aktif - Örn: RB7 = 1)
+    MOVF HANE4, W
+    IORLW b'10000000'   ; Q4(RB7) seçici bitini 1 yap
+    MOVWF PORTB
+    CALL GECIKME
+    CLRF PORTB
+
+    GOTO ANA_DONGU      ; Sistemi sürekli tekrarla
+
+;--- KISA GECİKME (Display taraması için gözün algılayacağı hızda) ---
+GECIKME
+    MOVLW d'10'
+    MOVWF SAYAC1
+G1
+    MOVLW d'100'
+    MOVWF SAYAC2
+G2
+    DECFSZ SAYAC2, F
+    GOTO G2
+    DECFSZ SAYAC1, F
+    GOTO G1
+    RETURN
+
+    END
