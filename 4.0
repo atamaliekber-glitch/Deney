@@ -1,0 +1,178 @@
+; ==============================================================================
+; DENEY 4: ŞİFRELEME CİHAZI - ÇEVRİM TABLOSU KULLANIMI VE 7 PARÇALI GÖSTERGE
+; ==============================================================================
+    LIST P=16F628A
+    INCLUDE <P16F628A.INC>
+    __CONFIG _FOSC_INTOSCIO & _WDTE_OFF & _PWRTE_ON & _MCLRE_ON & _BOREN_OFF & _LVP_OFF
+
+; --- Değişken Tanımlamaları ---
+CBLOCK 0x20
+    veri1       ; 1. Veri (RA0, RA1)
+    veri2       ; 2. Veri (RA2, RA3)
+    bilgi1      ; 4*veri1 + 3
+    bilgi2      ; 3*veri2 + 5
+    bilgi3      ; 2*veri1 + veri2
+    bilgi4      ; 1*veri1 + 2*veri2
+    kod1        ; Şifrelenmiş Bilgi 1
+    kod2        ; Şifrelenmiş Bilgi 2
+    kod3        ; Şifrelenmiş Bilgi 3
+    kod4        ; Şifrelenmiş Bilgi 4
+    delay1      ; Gecikme sayacı 1
+    delay2      ; Gecikme sayacı 2
+ENDC
+
+    ORG 0x0000
+    GOTO MAIN
+
+; --- Şifreleme (Dönüşüm) Tablosu ---
+; Her değer farklı bir sembole şifrelenir (0-15 arası rastgele dağılım)
+CEVRIM_TABLOSU:
+    ADDWF PCL, F
+    RETLW 0x05 ; 0  -> 5
+    RETLW 0x02 ; 1  -> 2
+    RETLW 0x09 ; 2  -> 9
+    RETLW 0x00 ; 3  -> 0
+    RETLW 0x01 ; 4  -> 1
+    RETLW 0x08 ; 5  -> 8
+    RETLW 0x03 ; 6  -> 3
+    RETLW 0x07 ; 7  -> 7
+    RETLW 0x04 ; 8  -> 4
+    RETLW 0x06 ; 9  -> 6
+    RETLW 0x0A ; 10 -> A (7447'de 'c' sembolü)
+    RETLW 0x0B ; 11 -> B (7447'de ters 'u' sembolü)
+    RETLW 0x0C ; 12 -> C (7447'de 'u' sembolü)
+    RETLW 0x0D ; 13 -> D (7447'de '-' sembolü)
+    RETLW 0x0E ; 14 -> E (7447'de alt çizgi)
+    RETLW 0x0F ; 15 -> F (7447'de boşluk)
+
+; --- Ana Program ---
+MAIN:
+    ; --- Port Ayarları ---
+    MOVLW 0x07
+    MOVWF CMCON         ; PORTA komparatörlerini kapat, dijital I/O yap
+
+    BSF STATUS, RP0     ; Bank 1'e geç
+    MOVLW 0xFF          
+    MOVWF TRISA         ; PORTA'yı tamamen giriş yap
+    CLRF TRISB          ; PORTB'yi tamamen çıkış yap
+    BCF STATUS, RP0     ; Bank 0'a dön
+
+LOOP:
+    ; 1. Veriyi Okuma (RA0, RA1)
+    MOVF PORTA, W
+    ANDLW 0x03          ; Sadece ilk 2 biti al (0000 0011)
+    MOVWF veri1
+
+    ; 2. Veriyi Okuma (RA2, RA3)
+    MOVF PORTA, W
+    MOVWF veri2
+    RRF veri2, F        ; 2 defa sağa kaydırarak RA2,RA3'ü bit 0 ve 1'e taşı
+    RRF veri2, F
+    MOVLW 0x03
+    ANDWF veri2, F      ; Sadece gerekli olan 2 biti al
+
+    ; --- Matematiksel Hesaplamalar ---
+    
+    ; Bilgi1 = 4 x veri1 + 3
+    MOVF veri1, W
+    MOVWF bilgi1
+    BCF STATUS, C
+    RLF bilgi1, F       ; x2
+    BCF STATUS, C
+    RLF bilgi1, F       ; x4
+    MOVLW 0x03
+    ADDWF bilgi1, F     ; +3
+
+    ; Bilgi2 = 3 x veri2 + 5
+    MOVF veri2, W
+    MOVWF bilgi2
+    BCF STATUS, C
+    RLF bilgi2, W       ; W = 2 x veri2
+    ADDWF veri2, W      ; W = 3 x veri2
+    ADDLW 0x05          ; W = 3 x veri2 + 5
+    MOVWF bilgi2
+
+    ; Bilgi3 = 2 x veri1 + veri2
+    MOVF veri1, W
+    MOVWF bilgi3
+    BCF STATUS, C
+    RLF bilgi3, W       ; W = 2 x veri1
+    ADDWF veri2, W      ; W = 2 x veri1 + veri2
+    MOVWF bilgi3
+
+    ; Bilgi4 = veri1 + 2 x veri2
+    MOVF veri2, W
+    MOVWF bilgi4
+    BCF STATUS, C
+    RLF bilgi4, W       ; W = 2 x veri2
+    ADDWF veri1, W      ; W = veri1 + 2 x veri2
+    MOVWF bilgi4
+
+    ; --- Tablodan Kodları Alma (Şifreleme) ---
+    MOVF bilgi1, W
+    CALL CEVRIM_TABLOSU
+    MOVWF kod1
+
+    MOVF bilgi2, W
+    CALL CEVRIM_TABLOSU
+    MOVWF kod2
+
+    MOVF bilgi3, W
+    CALL CEVRIM_TABLOSU
+    MOVWF kod3
+
+    MOVF bilgi4, W
+    CALL CEVRIM_TABLOSU
+    MOVWF kod4
+
+    ; --- Görüntüleme (Multiplexing) İşlemleri ---
+    ; PNP Transistör olduğu için aktif etmek istediğimiz digit'e 0 göndermeliyiz.
+    
+    ; Display 1 (Q1 = RB4 aktif -> 1110 0000 = 0xE0)
+    MOVLW 0xFF          ; Gölgelenmeyi önlemek için tüm displayleri kapat
+    MOVWF PORTB
+    MOVF kod1, W
+    IORLW 0xE0          ; RB4 = 0, diğerleri 1
+    MOVWF PORTB
+    CALL DELAY
+
+    ; Display 2 (Q2 = RB5 aktif -> 1101 0000 = 0xD0)
+    MOVLW 0xFF
+    MOVWF PORTB
+    MOVF kod2, W
+    IORLW 0xD0          ; RB5 = 0, diğerleri 1
+    MOVWF PORTB
+    CALL DELAY
+
+    ; Display 3 (Q3 = RB6 aktif -> 1011 0000 = 0xB0)
+    MOVLW 0xFF
+    MOVWF PORTB
+    MOVF kod3, W
+    IORLW 0xB0          ; RB6 = 0, diğerleri 1
+    MOVWF PORTB
+    CALL DELAY
+
+    ; Display 4 (Q4 = RB7 aktif -> 0111 0000 = 0x70)
+    MOVLW 0xFF
+    MOVWF PORTB
+    MOVF kod4, W
+    IORLW 0x70          ; RB7 = 0, diğerleri 1
+    MOVWF PORTB
+    CALL DELAY
+
+    GOTO LOOP           ; İşlemi sürekli tekrarla
+
+; --- Bekleme Alt Programı (Tarama için kısacık gecikme) ---
+DELAY:
+    MOVLW 0x05          
+    MOVWF delay1
+D1: MOVLW 0x20
+    MOVWF delay2
+D2: DECFSZ delay2, F
+    GOTO D2
+    DECFSZ delay1, F
+    GOTO D1
+    RETURN
+
+    END
+
