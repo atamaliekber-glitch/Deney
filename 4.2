@@ -1,0 +1,99 @@
+    LIST P=16F628A
+    #include <p16f628a.inc>
+
+    ; Konfigürasyon ayarları: Dahili osilatör, Watchdog kapalı vs.
+    __CONFIG _FOSC_INTOSCIO & _WDTE_OFF & _PWRTE_ON & _MCLRE_ON & _BOREN_OFF & _LVP_OFF & _CPD_OFF & _CP_OFF
+
+    ; --- DEĞİŞKEN TANIMLAMALARI ---
+    CBLOCK 0x20
+        VERI1       ; PORTA A0-A1 bitlerinden alınacak 1. veri (0-3 arası)
+        VERI2       ; PORTA A2-A3 bitlerinden alınacak 2. veri (0-3 arası)
+        BILGI1      ; Formül 1 sonucu
+        BILGI2      ; Formül 2 sonucu
+        BILGI3      ; Formül 3 sonucu
+        BILGI4      ; Formül 4 sonucu
+        TEMP        ; Matematiksel işlemler için geçici register
+    ENDC
+
+    ORG 0x000
+    GOTO KURULUM
+
+KURULUM
+    ; Komparatörleri kapat, PORTA pinlerini dijital I/O olarak ayarla
+    MOVLW 0x07
+    MOVWF CMCON
+
+    ; Giriş/Çıkış Yönlendirmeleri
+    BSF STATUS, RP0     ; Bank 1'e geç
+    MOVLW 0x0F          ; RA0, RA1, RA2, RA3 pinlerini giriş yap (0000 1111)
+    MOVWF TRISA
+    CLRF TRISB          ; PORTB'nin tamamını çıkış yap (Sonraki aşamalar için)
+    BCF STATUS, RP0     ; Bank 0'a dön
+
+ANA_DONGU
+    ; -----------------------------------------------------------
+    ; GİRİŞLERİN OKUNMASI VE AYRIŞTIRILMASI
+    ; -----------------------------------------------------------
+    
+    ; 1. Veriyi Al (PORTA'nın 0. ve 1. bitleri)
+    MOVF PORTA, W
+    ANDLW b'00000011'   ; Sadece ilk 2 biti maskele
+    MOVWF VERI1
+
+    ; 2. Veriyi Al (PORTA'nın 2. ve 3. bitleri)
+    MOVF PORTA, W
+    ANDLW b'00001100'   ; 2. ve 3. bitleri maskele
+    MOVWF TEMP
+    RRF TEMP, F         ; Sağa kaydır
+    RRF TEMP, F         ; Bir kez daha sağa kaydır (Değer 0-3 arasına düşsün)
+    MOVF TEMP, W
+    ANDLW b'00000011'   ; Garanti maskeleme
+    MOVWF VERI2
+
+    ; -----------------------------------------------------------
+    ; MATEMATİKSEL HESAPLAMALAR (1. AŞAMA)
+    ; -----------------------------------------------------------
+
+    ; --- Bilgi1 = 4 x 1.veri + 3 ---
+    MOVF VERI1, W
+    MOVWF TEMP
+    BCF STATUS, C       ; Sola kaydırmadan önce Carry bayrağını temizle
+    RLF TEMP, F         ; TEMP = VERI1 x 2
+    BCF STATUS, C
+    RLF TEMP, F         ; TEMP = VERI1 x 4
+    MOVF TEMP, W
+    ADDLW .3            ; W = (4 x 1.veri) + 3
+    MOVWF BILGI1
+
+    ; --- Bilgi2 = 3 x 2.veri + 5 ---
+    MOVF VERI2, W
+    MOVWF TEMP          ; TEMP = 1x VERI2
+    ADDWF TEMP, F       ; TEMP = 2x VERI2 (W'yi TEMP'e ekle)
+    ADDWF TEMP, W       ; W = 3x VERI2 (W'yi tekrar TEMP'e ekleyip W'ye yaz)
+    ADDLW .5            ; W = (3 x 2.veri) + 5
+    MOVWF BILGI2
+
+    ; --- Bilgi3 = 2 x 1.veri + 2.veri ---
+    MOVF VERI1, W
+    MOVWF TEMP
+    BCF STATUS, C
+    RLF TEMP, F         ; TEMP = 2 x 1.veri
+    MOVF VERI2, W
+    ADDWF TEMP, W       ; W = (2 x 1.veri) + 2.veri
+    MOVWF BILGI3
+
+    ; --- Bilgi4 = 1.veri + 2 x 2.veri ---
+    MOVF VERI2, W
+    MOVWF TEMP
+    BCF STATUS, C
+    RLF TEMP, F         ; TEMP = 2 x 2.veri
+    MOVF VERI1, W
+    ADDWF TEMP, W       ; W = 1.veri + (2 x 2.veri)
+    MOVWF BILGI4
+
+    ; Sürekli işlem için döngünün başına dön
+    ; (Tablo boş olduğu için şifreleme ve ekrana basma adımları eklenmemiştir)
+    GOTO ANA_DONGU
+
+    END
+
