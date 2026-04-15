@@ -1,0 +1,115 @@
+/* USER CODE BEGIN 0 */
+// ÇALIŞTIRMAK İSTEDİĞİNİZ GÖREVİ BURADAN SEÇİN (1, 2 veya 3)
+uint8_t secilen_gorev = 1; 
+
+// Görev 3 (EXTI) için gerekli değişkenler
+volatile uint8_t button_pressed_flag = 0;
+uint8_t exti_led_state = 0;
+
+// Kesme (Interrupt) Callback Fonksiyonu
+void HAL_GPIO_EXTI_Callback(uint16_t GPIO_Pin)
+{
+    // Eğer kesme PA0'dan geldiyse ve Görev 3 seçiliyse
+    if(GPIO_Pin == GPIO_PIN_0 && secilen_gorev == 3) 
+    {
+        button_pressed_flag = 1;
+    }
+}
+/* USER CODE END 0 */
+
+// ... (main fonksiyonunun başlangıcı ve CubeIDE'nin kendi kodları) ...
+
+/* USER CODE BEGIN 2 */
+// Görev 1 Değişkenleri
+uint32_t press_start_time = 0;
+uint32_t press_duration = 0;
+uint16_t task1_led_array[4] = {GPIO_PIN_12, GPIO_PIN_13, GPIO_PIN_14, GPIO_PIN_15}; // Yeşil, Turuncu, Kırmızı, Mavi
+
+// Görev 2 Değişkenleri
+uint8_t task2_led_state = 0;
+
+// Görev 3 Değişkenleri
+uint16_t task3_led_array[4] = {GPIO_PIN_15, GPIO_PIN_14, GPIO_PIN_12, GPIO_PIN_13}; // Mavi, Kırmızı, Yeşil, Turuncu
+/* USER CODE END 2 */
+
+// ...
+
+/* USER CODE BEGIN WHILE */
+while (1)
+{
+    // ==========================================
+    // GÖREV 1: Zaman Kontrollü LED Yakma
+    // ==========================================
+    if(secilen_gorev == 1)
+    {
+        if(HAL_GPIO_ReadPin(GPIOA, GPIO_PIN_0) == GPIO_PIN_SET) 
+        {
+            press_start_time = HAL_GetTick(); 
+            
+            while(HAL_GPIO_ReadPin(GPIOA, GPIO_PIN_0) == GPIO_PIN_SET); // Buton bırakılana kadar bekle
+            
+            press_duration = HAL_GetTick() - press_start_time; 
+
+            if(press_duration < 3000) // 3 saniyeden kısa basıldıysa
+            {
+                for(int i = 0; i < 4; i++) {
+                    HAL_GPIO_WritePin(GPIOD, task1_led_array[i], GPIO_PIN_SET);
+                    HAL_Delay(5000); 
+                }
+                HAL_GPIO_WritePin(GPIOD, GPIO_PIN_12|GPIO_PIN_13|GPIO_PIN_14|GPIO_PIN_15, GPIO_PIN_RESET); 
+            }
+            else // 3 saniyeden uzun basıldıysa
+            {
+                HAL_GPIO_WritePin(GPIOD, GPIO_PIN_14, GPIO_PIN_SET);   
+                HAL_Delay(5000);                                       
+                HAL_GPIO_WritePin(GPIOD, GPIO_PIN_14, GPIO_PIN_RESET); 
+            }
+        }
+    }
+
+    // ==========================================
+    // GÖREV 2: Döngüsel LED Değişimi
+    // ==========================================
+    else if(secilen_gorev == 2)
+    {
+        if(HAL_GPIO_ReadPin(GPIOA, GPIO_PIN_0) == GPIO_PIN_SET)
+        {
+            HAL_Delay(50); // Debounce
+            if(HAL_GPIO_ReadPin(GPIOA, GPIO_PIN_0) == GPIO_PIN_SET)
+            {
+                HAL_GPIO_WritePin(GPIOD, GPIO_PIN_12|GPIO_PIN_13|GPIO_PIN_14|GPIO_PIN_15, GPIO_PIN_RESET);
+                
+                if(task2_led_state == 0)      HAL_GPIO_WritePin(GPIOD, GPIO_PIN_15, GPIO_PIN_SET); // Mavi
+                else if(task2_led_state == 1) HAL_GPIO_WritePin(GPIOD, GPIO_PIN_14, GPIO_PIN_SET); // Kırmızı
+                else if(task2_led_state == 2) HAL_GPIO_WritePin(GPIOD, GPIO_PIN_12, GPIO_PIN_SET); // Yeşil
+                else if(task2_led_state == 3) HAL_GPIO_WritePin(GPIOD, GPIO_PIN_13, GPIO_PIN_SET); // Turuncu
+                
+                task2_led_state++;
+                if(task2_led_state > 3) task2_led_state = 0; 
+                
+                while(HAL_GPIO_ReadPin(GPIOA, GPIO_PIN_0) == GPIO_PIN_SET); 
+            }
+        }
+    }
+
+    // ==========================================
+    // GÖREV 3: Kesme (EXTI) Tabanlı LED Yakıp Söndürme
+    // ==========================================
+    else if(secilen_gorev == 3)
+    {
+        if(button_pressed_flag == 1)
+        {
+            button_pressed_flag = 0; 
+            
+            HAL_GPIO_WritePin(GPIOD, GPIO_PIN_12|GPIO_PIN_13|GPIO_PIN_14|GPIO_PIN_15, GPIO_PIN_RESET);
+            
+            HAL_GPIO_WritePin(GPIOD, task3_led_array[exti_led_state], GPIO_PIN_SET);
+            HAL_Delay(3000); 
+            HAL_GPIO_WritePin(GPIOD, task3_led_array[exti_led_state], GPIO_PIN_RESET);
+            
+            exti_led_state++;
+            if(exti_led_state > 3) exti_led_state = 0; 
+        }
+    }
+
+/* USER CODE END WHILE */
