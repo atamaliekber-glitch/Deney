@@ -1,0 +1,92 @@
+#include "stm32f4xx_hal.h"
+
+// STM32F407 Discovery Kartı LED ve Buton Pin Tanımlamaları
+#define LED_GREEN  GPIO_PIN_12 // Yeşil LED
+#define LED_ORANGE GPIO_PIN_13 // Turuncu LED
+#define LED_RED    GPIO_PIN_14 // Kırmızı LED
+#define LED_BLUE   GPIO_PIN_15 // Mavi LED
+#define USER_BTN   GPIO_PIN_0  // Kullanıcı Butonu (A Portu)
+
+void SystemClock_Config(void);
+static void MX_GPIO_Init(void);
+
+int main(void) {
+    // HAL Kütüphanesini başlat ve donanım ayarlarını yap
+    HAL_Init();
+    SystemClock_Config();
+    MX_GPIO_Init();
+
+    // led_state değişkeni sırayı takip eder: 
+    // 0: Mavi, 1: Kırmızı, 2: Yeşil, 3: Turuncu
+    uint8_t led_state = 0; 
+    uint8_t button_pressed = 0; // Butonun basılı tutulma durumunu kontrol eden bayrak
+
+    while (1) {
+        // Butona basıldığını algıla
+        if (HAL_GPIO_ReadPin(GPIOA, USER_BTN) == GPIO_PIN_SET) {
+            
+            HAL_Delay(50); // Buton arkını (debounce) engellemek için kısa gecikme
+
+            // Eğer butona yeni basıldıysa (önceden basılı değilse) işlemi yap
+            if (HAL_GPIO_ReadPin(GPIOA, USER_BTN) == GPIO_PIN_SET && button_pressed == 0) {
+                
+                button_pressed = 1; // İşlem yapıldığını kaydet, basılı tutulursa tekrar girmesin
+
+                // Kural: "Yalnızca bir LED yanmalı, diğerleri sönmelidir"
+                // Önce tüm LED'leri garanti olarak söndürüyoruz
+                HAL_GPIO_WritePin(GPIOD, LED_GREEN | LED_ORANGE | LED_RED | LED_BLUE, GPIO_PIN_RESET);
+
+                // İstenen sıraya göre (Mavi -> Kırmızı -> Yeşil -> Turuncu) ilgili LED'i yak
+                switch (led_state) {
+                    case 0:
+                        HAL_GPIO_WritePin(GPIOD, LED_BLUE, GPIO_PIN_SET);
+                        break;
+                    case 1:
+                        HAL_GPIO_WritePin(GPIOD, LED_RED, GPIO_PIN_SET);
+                        break;
+                    case 2:
+                        HAL_GPIO_WritePin(GPIOD, LED_GREEN, GPIO_PIN_SET);
+                        break;
+                    case 3:
+                        HAL_GPIO_WritePin(GPIOD, LED_ORANGE, GPIO_PIN_SET);
+                        break;
+                }
+
+                // Bir sonraki basım için durumu güncelle
+                led_state++;
+                if (led_state > 3) {
+                    led_state = 0; // Turuncudan sonra tekrar Maviye dön
+                }
+            }
+        } else {
+            // Buton bırakıldığında bayrağı sıfırla ki bir sonraki basımı algılayabilsin
+            button_pressed = 0;
+        }
+    }
+}
+
+// Standart GPIO Başlatma Fonksiyonu
+static void MX_GPIO_Init(void) {
+    GPIO_InitTypeDef GPIO_InitStruct = {0};
+
+    // GPIOA ve GPIOD saatlerini aktifleştir
+    __HAL_RCC_GPIOA_CLK_ENABLE();
+    __HAL_RCC_GPIOD_CLK_ENABLE();
+
+    // D Portu (LED'ler) Çıkış Ayarları
+    GPIO_InitStruct.Pin = LED_GREEN | LED_ORANGE | LED_RED | LED_BLUE;
+    GPIO_InitStruct.Mode = GPIO_MODE_OUTPUT_PP; 
+    GPIO_InitStruct.Pull = GPIO_NOPULL;
+    GPIO_InitStruct.Speed = GPIO_SPEED_FREQ_LOW;
+    HAL_GPIO_Init(GPIOD, &GPIO_InitStruct);
+
+    // A Portu (Buton - PA0) Giriş Ayarları
+    GPIO_InitStruct.Pin = USER_BTN;
+    GPIO_InitStruct.Mode = GPIO_MODE_INPUT;
+    GPIO_InitStruct.Pull = GPIO_NOPULL; 
+    HAL_GPIO_Init(GPIOA, &GPIO_InitStruct);
+}
+
+void SystemClock_Config(void) {
+    // Saat ayarları (varsayılan ise boş kalabilir)
+}
