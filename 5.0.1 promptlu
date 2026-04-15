@@ -1,0 +1,136 @@
+#include "stm32f4xx_hal.h"
+
+/* Fonksiyon Prototipleri */
+void SystemClock_Config(void);
+static void MX_GPIO_Init(void);
+void Error_Handler(void);
+
+int main(void)
+{
+  /* HAL kütüphanesini başlatır, flash prefetch vb. ayarları yapar ve systick timer'ı kurar. */
+  HAL_Init();
+
+  /* Sistem saatini (Clock) yapılandırır. */
+  SystemClock_Config();
+
+  /* GPIO (Buton ve LED'ler) pinlerini başlatır. */
+  MX_GPIO_Init();
+
+  /* Süre ölçümü için kullanılacak değişkenler */
+  uint32_t press_start_time = 0; // Butona basılmaya başlandığı anki ms değeri
+  uint32_t press_duration = 0;   // Butona toplam basılı tutulma süresi
+
+  /* Tüm LED'leri barındıran dizi (Kısa basım döngüsü için: Yeşil, Turuncu, Kırmızı, Mavi) */
+  uint16_t led_pins[] = {GPIO_PIN_12, GPIO_PIN_13, GPIO_PIN_14, GPIO_PIN_15};
+
+  /* Sonsuz Döngü */
+  while (1)
+  {
+    /* Butona basılıp basılmadığını kontrol et (PA0 == 1 ise butona basılmıştır) */
+    if (HAL_GPIO_ReadPin(GPIOA, GPIO_PIN_0) == GPIO_PIN_SET)
+    {
+      /* Ark (Debounce) önleme beklemesi - Fiziksel sıçramaları filtreler */
+      HAL_Delay(50); 
+      
+      /* 50ms sonra hala basılıysa gerçek bir basım olarak kabul et */
+      if (HAL_GPIO_ReadPin(GPIOA, GPIO_PIN_0) == GPIO_PIN_SET)
+      {
+        /* HAL_GetTick() sistem başladığından beri geçen süreyi milisaniye (ms) cinsinden döndürür. */
+        press_start_time = HAL_GetTick(); // Başlangıç zamanını kaydet
+        
+        /* Buton bırakılana kadar burada bekle (Kullanıcının elini çekmesini bekliyoruz) */
+        while (HAL_GPIO_ReadPin(GPIOA, GPIO_PIN_0) == GPIO_PIN_SET)
+        {
+          // Sadece bekle...
+        }
+        
+        /* Buton bırakıldığında geçen süreyi hesapla: Şu anki zaman - Başlangıç zamanı */
+        press_duration = HAL_GetTick() - press_start_time;
+        
+        /* GÖREV KONTROLÜ: Basım süresine göre karar ver */
+        
+        /* 1. DURUM: Kısa Basım (3000 ms'den kısa) */
+        if (press_duration < 3000)
+        {
+          /* LED'leri sırayla yakıp söndür */
+          for (int i = 0; i < 4; i++)
+          {
+            /* İlgili LED'i yak */
+            HAL_GPIO_WritePin(GPIOD, led_pins[i], GPIO_PIN_SET);
+            
+            /* 5 saniye (5000 ms) bekle */
+            HAL_Delay(5000);
+            
+            /* Bir sonraki LED'e geçmeden önce mevcut LED'i söndür */
+            HAL_GPIO_WritePin(GPIOD, led_pins[i], GPIO_PIN_RESET);
+          }
+        }
+        /* 2. DURUM: Uzun Basım (3000 ms veya daha uzun) */
+        else
+        {
+          /* Sadece Kırmızı LED'i (PD14) yak */
+          HAL_GPIO_WritePin(GPIOD, GPIO_PIN_14, GPIO_PIN_SET);
+          
+          /* 5 saniye (5000 ms) bekle */
+          HAL_Delay(5000);
+          
+          /* Kırmızı LED'i söndür */
+          HAL_GPIO_WritePin(GPIOD, GPIO_PIN_14, GPIO_PIN_RESET);
+        }
+      }
+    }
+  }
+}
+
+/**
+  * @brief GPIO İlk Ayarlamaları (Initialization)
+  */
+static void MX_GPIO_Init(void)
+{
+  GPIO_InitTypeDef GPIO_InitStruct = {0};
+
+  /* Port A ve Port D'nin clock (saat) sinyallerini aktif hale getir. 
+     Clock açılmadan GPIO'lar çalışmaz! */
+  __HAL_RCC_GPIOA_CLK_ENABLE();
+  __HAL_RCC_GPIOD_CLK_ENABLE();
+
+  /* Başlangıçta tüm LED'lerin kapalı (LOW) olduğundan emin olmak için RESET gönder. */
+  HAL_GPIO_WritePin(GPIOD, GPIO_PIN_12|GPIO_PIN_13|GPIO_PIN_14|GPIO_PIN_15, GPIO_PIN_RESET);
+
+  /* PA0 (Kullanıcı Butonu) Pini Yapılandırması */
+  GPIO_InitStruct.Pin = GPIO_PIN_0;           // Pin 0 seçildi
+  GPIO_InitStruct.Mode = GPIO_MODE_INPUT;     // Giriş modu olarak ayarlandı
+  GPIO_InitStruct.Pull = GPIO_NOPULL;         // Discovery kartında donanımsal pull-down vardır, yazılımsala gerek yok
+  HAL_GPIO_Init(GPIOA, &GPIO_InitStruct);     // Ayarları Port A'ya uygula
+
+  /* PD12, PD13, PD14 ve PD15 (LED'ler) Pini Yapılandırması */
+  GPIO_InitStruct.Pin = GPIO_PIN_12|GPIO_PIN_13|GPIO_PIN_14|GPIO_PIN_15; // İlgili pinler seçildi
+  GPIO_InitStruct.Mode = GPIO_MODE_OUTPUT_PP; // Push-Pull çıkış modu olarak ayarlandı
+  GPIO_InitStruct.Pull = GPIO_NOPULL;         // Pull-up/down direnci kapalı
+  GPIO_InitStruct.Speed = GPIO_SPEED_FREQ_LOW; // Düşük hız yeterlidir (LED yakıyoruz)
+  HAL_GPIO_Init(GPIOD, &GPIO_InitStruct);     // Ayarları Port D'ye uygula
+}
+
+/**
+  * @brief System Clock Configuration (Varsayılan CubeMX şablonu)
+  */
+void SystemClock_Config(void)
+{
+  /* * Not: Bu fonksiyon genellikle STM32CubeMX tarafından donanıma göre otomatik üretilir.
+   * PLL, HSE/HSI ayarları kartın kristal değerlerine göre burada yapılır.
+   * Standart bir proje oluşturduğunuzda bu bloğun içi dolu gelecektir, 
+   * kodunuzun yapısını bozmamak için bu iskeleti bırakıyorum.
+   */
+}
+
+/**
+  * @brief Hata yakalama fonksiyonu
+  */
+void Error_Handler(void)
+{
+  /* Kullanıcı hata durumunda kendi bildirimini ekleyebilir */
+  __disable_irq();
+  while (1)
+  {
+  }
+}
