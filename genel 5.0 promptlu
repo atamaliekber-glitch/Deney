@@ -1,0 +1,173 @@
+#include "main.h"
+
+/* * TEST EDİLECEK GÖREVİ BURADAN SEÇİN:
+ * 1 -> Görev 1: Zaman Kontrollü LED Yakma (Polling)
+ * 2 -> Görev 2: Döngüsel LED Değişimi (Polling)
+ * 3 -> Görev 3: Kesme Tabanlı LED Yakıp Söndürme (EXTI)
+ */
+#define GOREV_SECIMI 1
+
+/* Fonksiyon Prototipleri */
+void SystemClock_Config(void);
+static void MX_GPIO_Init(void);
+void Gorev1_Calistir(void);
+void Gorev2_Calistir(void);
+void Gorev3_Calistir(void);
+
+/* Global Değişkenler (Görev 2 ve 3 için) */
+uint8_t led_sirasi_g2 = 0; // 0:Mavi, 1:Kırmızı, 2:Yeşil, 3:Turuncu
+uint16_t dongusel_ledler[4] = {GPIO_PIN_15, GPIO_PIN_14, GPIO_PIN_12, GPIO_PIN_13};
+
+volatile uint8_t gorev3_tetiklendi = 0;
+uint8_t led_sirasi_g3 = 0;
+
+int main(void)
+{
+  HAL_Init();
+  SystemClock_Config(); // Clock ayarları (CubeMX tarafından oluşturulan standart ayar)
+  MX_GPIO_Init();
+
+  while (1)
+  {
+#if (GOREV_SECIMI == 1)
+    Gorev1_Calistir();
+#elif (GOREV_SECIMI == 2)
+    Gorev2_Calistir();
+#elif (GOREV_SECIMI == 3)
+    Gorev3_Calistir();
+#endif
+  }
+}
+
+/* Görev 1: Zaman Kontrollü LED Yakma (Polling) */
+void Gorev1_Calistir(void) {
+    if (HAL_GPIO_ReadPin(GPIOA, GPIO_PIN_0) == GPIO_PIN_SET) {
+        HAL_Delay(50); // Buton arkı (debounce) engelleme
+        if (HAL_GPIO_ReadPin(GPIOA, GPIO_PIN_0) == GPIO_PIN_SET) {
+            
+            uint32_t baslangic_zamani = HAL_GetTick();
+            
+            // Buton basılı tutulduğu sürece bekle
+            while (HAL_GPIO_ReadPin(GPIOA, GPIO_PIN_0) == GPIO_PIN_SET); 
+            
+            uint32_t basili_tutma_suresi = HAL_GetTick() - baslangic_zamani;
+
+            if (basili_tutma_suresi < 3000) {
+                // 3 Saniyeden KISA basıldı: Tüm LED'leri sırayla 5'er saniye yak
+                uint16_t sirali_ledler[4] = {GPIO_PIN_12, GPIO_PIN_13, GPIO_PIN_14, GPIO_PIN_15};
+                for(int i = 0; i < 4; i++) {
+                    HAL_GPIO_WritePin(GPIOD, sirali_ledler[i], GPIO_PIN_SET);
+                    HAL_Delay(5000); // 5 saniye bekle
+                    HAL_GPIO_WritePin(GPIOD, sirali_ledler[i], GPIO_PIN_RESET); // İsteğe bağlı: Diğerine geçerken öncekini söndür
+                }
+                // Tümünü söndür (Güvenlik amaçlı)
+                HAL_GPIO_WritePin(GPIOD, GPIO_PIN_12|GPIO_PIN_13|GPIO_PIN_14|GPIO_PIN_15, GPIO_PIN_RESET);
+                
+            } else {
+                // 3 Saniyeden UZUN basıldı: Sadece Kırmızı (PD14) 5 saniye yansın
+                HAL_GPIO_WritePin(GPIOD, GPIO_PIN_14, GPIO_PIN_SET);
+                HAL_Delay(5000);
+                HAL_GPIO_WritePin(GPIOD, GPIO_PIN_14, GPIO_PIN_RESET);
+            }
+        }
+    }
+}
+
+/* Görev 2: Döngüsel LED Değişimi (Polling) */
+void Gorev2_Calistir(void) {
+    if (HAL_GPIO_ReadPin(GPIOA, GPIO_PIN_0) == GPIO_PIN_SET) {
+        HAL_Delay(50); // Debounce
+        if (HAL_GPIO_ReadPin(GPIOA, GPIO_PIN_0) == GPIO_PIN_SET) {
+            
+            // Önceki tüm LED'leri söndür
+            HAL_GPIO_WritePin(GPIOD, GPIO_PIN_12|GPIO_PIN_13|GPIO_PIN_14|GPIO_PIN_15, GPIO_PIN_RESET);
+            
+            // İlgili LED'i yak
+            HAL_GPIO_WritePin(GPIOD, dongusel_ledler[led_sirasi_g2], GPIO_PIN_SET);
+            
+            // Sırayı güncelle
+            led_sirasi_g2++;
+            if(led_sirasi_g2 > 3) {
+                led_sirasi_g2 = 0;
+            }
+            
+            // Butondan elin çekilmesini bekle (Aksi halde sürekli döner)
+            while (HAL_GPIO_ReadPin(GPIOA, GPIO_PIN_0) == GPIO_PIN_SET);
+        }
+    }
+}
+
+/* Görev 3: EXTI Kesme Alt Programı (ISR) ve Çalıştırma Fonksiyonu */
+#if (GOREV_SECIMI == 3)
+void HAL_GPIO_EXTI_Callback(uint16_t GPIO_Pin) {
+    if (GPIO_Pin == GPIO_PIN_0) {
+        // Kesmelerde delay() kullanılamayacağı için tick bazlı debounce uygulanır
+        static uint32_t son_kesme_zamani = 0;
+        uint32_t su_an = HAL_GetTick();
+        
+        if ((su_an - son_kesme_zamani) > 200) { // 200ms debounce koruması
+            gorev3_tetiklendi = 1;
+            son_kesme_zamani = su_an;
+        }
+    }
+}
+#endif
+
+void Gorev3_Calistir(void) {
+    if (gorev3_tetiklendi) {
+        gorev3_tetiklendi = 0; // Bayrağı temizle
+        uint32_t blink_baslangic = HAL_GetTick();
+        
+        // 3 saniye boyunca (3000 ms) ilgili LED'i yakıp söndür
+        while((HAL_GetTick() - blink_baslangic) < 3000) {
+            HAL_GPIO_TogglePin(GPIOD, dongusel_ledler[led_sirasi_g3]);
+            HAL_Delay(250); // 250ms'de bir durum değiştir (Blink efekti)
+        }
+        
+        // İşlem bitince LED'i tamamen söndür
+        HAL_GPIO_WritePin(GPIOD, dongusel_ledler[led_sirasi_g3], GPIO_PIN_RESET);
+        
+        // Sıradaki LED'e geç
+        led_sirasi_g3++;
+        if(led_sirasi_g3 > 3) led_sirasi_g3 = 0;
+    }
+}
+
+/* GPIO Konfigürasyon Fonksiyonu */
+static void MX_GPIO_Init(void)
+{
+  GPIO_InitTypeDef GPIO_InitStruct = {0};
+
+  /* GPIO Clock Aktif Edilmesi */
+  __HAL_RCC_GPIOA_CLK_ENABLE();
+  __HAL_RCC_GPIOD_CLK_ENABLE();
+
+  /* LED Pinlerinin (PD12, PD13, PD14, PD15) Çıkış Olarak Ayarlanması */
+  HAL_GPIO_WritePin(GPIOD, GPIO_PIN_12|GPIO_PIN_13|GPIO_PIN_14|GPIO_PIN_15, GPIO_PIN_RESET);
+  GPIO_InitStruct.Pin = GPIO_PIN_12|GPIO_PIN_13|GPIO_PIN_14|GPIO_PIN_15;
+  GPIO_InitStruct.Mode = GPIO_MODE_OUTPUT_PP;
+  GPIO_InitStruct.Pull = GPIO_NOPULL;
+  GPIO_InitStruct.Speed = GPIO_SPEED_FREQ_LOW;
+  HAL_GPIO_Init(GPIOD, &GPIO_InitStruct);
+
+#if (GOREV_SECIMI == 3)
+  /* Görev 3 için PA0 Pinini EXTI0 Olarak Ayarlama */
+  GPIO_InitStruct.Pin = GPIO_PIN_0;
+  GPIO_InitStruct.Mode = GPIO_MODE_IT_RISING; // Yükselen kenar tetiklemesi
+  GPIO_InitStruct.Pull = GPIO_NOPULL;
+  HAL_GPIO_Init(GPIOA, &GPIO_InitStruct);
+
+  // EXTI0 Kesmesini Aktifleştirme
+  HAL_NVIC_SetPriority(EXTI0_IRQn, 0, 0);
+  HAL_NVIC_EnableIRQ(EXTI0_IRQn);
+#else
+  /* Görev 1 ve 2 için PA0 Pinini Input (Polling) Olarak Ayarlama */
+  GPIO_InitStruct.Pin = GPIO_PIN_0;
+  GPIO_InitStruct.Mode = GPIO_MODE_INPUT;
+  GPIO_InitStruct.Pull = GPIO_NOPULL; // Discovery kartında PA0 donanımsal pull-down'a sahiptir.
+  HAL_GPIO_Init(GPIOA, &GPIO_InitStruct);
+#endif
+}
+
+// Not: EXTI0_IRQHandler fonksiyonunu stm32f4xx_it.c dosyası içerisinde tanımlı olduğundan emin olun.
+// İçinde HAL_GPIO_EXTI_IRQHandler(GPIO_PIN_0); çağrılmalıdır. (CubeMX varsayılan olarak ekler).
