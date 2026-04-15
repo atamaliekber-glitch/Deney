@@ -1,0 +1,134 @@
+#include "stm32f4xx_hal.h"
+
+/* Fonksiyon Prototipleri */
+void SystemClock_Config(void);
+static void MX_GPIO_Init(void);
+
+/* --- GLOBAL DEĞİŞKENLER --- */
+/* Kesme fonksiyonu (ISR) ve main döngüsü arasında haberleşmeyi sağlayan bayrak.
+   Optimizasyonlardan etkilenmemesi için 'volatile' olarak tanımlanmıştır. */
+volatile uint8_t button_pressed_flag = 0;
+
+/* Yanacak LED'in sırasını tutan indeks (0: Mavi, 1: Kırmızı, 2: Yeşil, 3: Turuncu) */
+uint8_t led_index = 0;
+
+/* LED'lerin istenilen yanma sırasına göre Port D pin tanımlamaları dizisi */
+const uint16_t led_sequence[4] = {GPIO_PIN_15, GPIO_PIN_14, GPIO_PIN_12, GPIO_PIN_13};
+
+int main(void)
+{
+  /* HAL Kütüphanesini başlat */
+  HAL_Init();
+
+  /* Sistem saatini yapılandır */
+  SystemClock_Config();
+
+  /* GPIO ve Kesme (EXTI) ayarlarını başlat */
+  MX_GPIO_Init();
+
+  /* Sonsuz Döngü */
+  while (1)
+  {
+    /* Eğer kesme fonksiyonu butona basıldığını tespit edip bayrağı 1 yaptıysa: */
+    if (button_pressed_flag == 1)
+    {
+      /* Yeni bir basımı algılayabilmek için işleme başlarken bayrağı sıfırla */
+      button_pressed_flag = 0;
+
+      /* İlgili sıradaki LED'i yak */
+      HAL_GPIO_WritePin(GPIOD, led_sequence[led_index], GPIO_PIN_SET);
+
+      /* İşlemciyi main döngüsü içerisinde 3 saniye (3000 ms) beklet 
+         (Bu bekleme ISR'de olmadığı için sistemi kilitlemez, kesmeler arka planda çalışmaya devam eder) */
+      HAL_Delay(3000);
+
+      /* Süre bitiminde yanan LED'i söndür */
+      HAL_GPIO_WritePin(GPIOD, led_sequence[led_index], GPIO_PIN_RESET);
+
+      /* Bir sonraki LED'e geçmek için indeksi artır ve 4'e göre mod al (0-3 arası döngüsel) */
+      led_index = (led_index + 1) % 4;
+    }
+  }
+}
+
+/**
+  * @brief  EXTI (Dış Kesme) Geri Çağırma Fonksiyonu
+  * Donanımsal bir kesme oluştuğunda HAL kütüphanesi bu fonksiyonu otomatik tetikler.
+  * @param  GPIO_Pin: Kesmeyi tetikleyen pin numarası
+  */
+void HAL_GPIO_EXTI_Callback(uint16_t GPIO_Pin)
+{
+  /* Kesmenin bizim butonumuzdan (PA0) gelip gelmediğini kontrol et */
+  if (GPIO_Pin == GPIO_PIN_0)
+  {
+    /* static değişkenler fonksiyon bitse bile değerini hafızada korur.
+       Son geçerli kesme zamanını tutmak için kullanıyoruz. */
+    static uint32_t last_interrupt_time = 0;
+    
+    /* Sistemin o anki süresini milisaniye olarak al */
+    uint32_t current_time = HAL_GetTick();
+
+    /* Debounce Kontrolü: 
+       Şu anki zaman ile son kesme zamanı arasında 200 ms'den fazla fark varsa
+       bu gerçek bir basımdır, ark (titreşim) değildir. */
+    if ((current_time - last_interrupt_time) > 200)
+    {
+      /* Gerçek basım onaylandı. Bayrağı kaldırarak main() döngüsüne haber ver. */
+      button_pressed_flag = 1;
+      
+      /* Bir sonraki hesaplama için son kesme zamanını güncelle */
+      last_interrupt_time = current_time;
+    }
+  }
+}
+
+/**
+  * @brief  EXTI0 Kesme Yönlendiricisi (Interrupt Handler)
+  * Normalde stm32f4xx_it.c dosyasında bulunur, ancak tüm kodu tek dosyada
+  * görebilmeniz için main.c içine eklenmiştir.
+  */
+void EXTI0_IRQHandler(void)
+{
+  /* Gelen donanım kesmesini HAL'ın EXTI yönetim fonksiyonuna iletir */
+  HAL_GPIO_EXTI_IRQHandler(GPIO_PIN_0);
+}
+
+/**
+  * @brief GPIO ve EXTI İlk Ayarlamaları
+  */
+static void MX_GPIO_Init(void)
+{
+  GPIO_InitTypeDef GPIO_InitStruct = {0};
+
+  /* Port A ve Port D'nin clock sinyallerini aktif et */
+  __HAL_RCC_GPIOA_CLK_ENABLE();
+  __HAL_RCC_GPIOD_CLK_ENABLE();
+
+  /* Başlangıçta tüm LED'lerin kapalı olduğundan emin ol */
+  HAL_GPIO_WritePin(GPIOD, GPIO_PIN_12|GPIO_PIN_13|GPIO_PIN_14|GPIO_PIN_15, GPIO_PIN_RESET);
+
+  /* PA0 (Kullanıcı Butonu) - Dış Kesme (EXTI) Olarak Yapılandırma */
+  GPIO_InitStruct.Pin = GPIO_PIN_0;
+  /* Butona basıldığında lojik seviye 0'dan 1'e çıktığı için Yükselen Kenar (RISING) kesmesi seçilir */
+  GPIO_InitStruct.Mode = GPIO_MODE_IT_RISING; 
+  GPIO_InitStruct.Pull = GPIO_NOPULL;
+  HAL_GPIO_Init(GPIOA, &GPIO_InitStruct);
+
+  /* PD12, PD13, PD14, PD15 (LED'ler) - Çıkış Olarak Yapılandırma */
+  GPIO_InitStruct.Pin = GPIO_PIN_12|GPIO_PIN_13|GPIO_PIN_14|GPIO_PIN_15;
+  GPIO_InitStruct.Mode = GPIO_MODE_OUTPUT_PP;
+  GPIO_InitStruct.Pull = GPIO_NOPULL;
+  GPIO_InitStruct.Speed = GPIO_SPEED_FREQ_LOW;
+  HAL_GPIO_Init(GPIOD, &GPIO_InitStruct);
+
+  /* NVIC (Nested Vectored Interrupt Controller) Ayarları */
+  /* EXTI Hattı 0 için kesme önceliğini ayarla (En yüksek öncelik 0'dır) */
+  HAL_NVIC_SetPriority(EXTI0_IRQn, 0, 0);
+  /* EXTI Hattı 0 kesmesini sistemde aktif hale getir */
+  HAL_NVIC_EnableIRQ(EXTI0_IRQn);
+}
+
+void SystemClock_Config(void)
+{
+  /* Standart CubeMX Saat Yapılandırması */
+}
