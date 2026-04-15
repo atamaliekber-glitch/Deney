@@ -1,0 +1,100 @@
+#include "stm32f4xx_hal.h"
+
+// STM32F407 Discovery Kartı LED ve Buton Pin Tanımlamaları
+#define LED_GREEN  GPIO_PIN_12 // Yeşil LED
+#define LED_ORANGE GPIO_PIN_13 // Turuncu LED
+#define LED_RED    GPIO_PIN_14 // Kırmızı LED
+#define LED_BLUE   GPIO_PIN_15 // Mavi LED
+#define USER_BTN   GPIO_PIN_0  // Kullanıcı Butonu (A Portu)
+
+void SystemClock_Config(void);
+static void MX_GPIO_Init(void);
+
+int main(void) {
+    // HAL Kütüphanesini başlat ve donanım ayarlarını yap
+    HAL_Init();
+    SystemClock_Config();
+    MX_GPIO_Init();
+
+    uint32_t press_start_time = 0;
+    uint32_t press_duration = 0;
+
+    while (1) {
+        // Butona basıldığını algıla (PA0 lojik HIGH olduğunda)
+        if (HAL_GPIO_ReadPin(GPIOA, USER_BTN) == GPIO_PIN_SET) {
+            
+            HAL_Delay(50); // Buton arkını (debounce) engellemek için kısa gecikme
+
+            // Butona gerçekten basıldıysa süreyi başlat
+            if (HAL_GPIO_ReadPin(GPIOA, USER_BTN) == GPIO_PIN_SET) {
+                press_start_time = HAL_GetTick();
+
+                // Kullanıcı butonu bırakana kadar bekle
+                while (HAL_GPIO_ReadPin(GPIOA, USER_BTN) == GPIO_PIN_SET) {
+                    // Buton basılı tutulduğu sürece bu döngüde kalır
+                }
+
+                // Buton bırakıldığında geçen süreyi milisaniye cinsinden hesapla
+                press_duration = HAL_GetTick() - press_start_time;
+
+                // -------------------------------------------------------------
+                // SENARYO A: 3 Saniyeden Kısa Basım (< 3000 ms)
+                // -------------------------------------------------------------
+                if (press_duration < 3000) {
+                    
+                    uint16_t leds[4] = {LED_GREEN, LED_ORANGE, LED_RED, LED_BLUE};
+                    
+                    // LED'leri sırayla yakıp 5 saniye bekletiyoruz
+                    for(int i = 0; i < 4; i++) {
+                        HAL_GPIO_WritePin(GPIOD, leds[i], GPIO_PIN_SET);
+                        HAL_Delay(5000); // 5 saniye açık kalır
+                        HAL_GPIO_WritePin(GPIOD, leds[i], GPIO_PIN_RESET); // Diğerine geçmeden önce kapatır
+                    }
+                    
+                    // Görev yönergesindeki "tüm LED'ler sönmelidir" kuralını garantiye almak için
+                    HAL_GPIO_WritePin(GPIOD, LED_GREEN | LED_ORANGE | LED_RED | LED_BLUE, GPIO_PIN_RESET);
+                } 
+                
+                // -------------------------------------------------------------
+                // SENARYO B: 3 Saniyeden Uzun Basım (>= 3000 ms)
+                // -------------------------------------------------------------
+                else {
+                    // Sadece Kırmızı LED (PD14) yanar
+                    HAL_GPIO_WritePin(GPIOD, LED_RED, GPIO_PIN_SET);
+                    
+                    HAL_Delay(5000); // 5 saniye açık kalır
+                    
+                    // 5 saniye sonunda Kırmızı LED kapanır
+                    HAL_GPIO_WritePin(GPIOD, LED_RED, GPIO_PIN_RESET);
+                }
+            }
+        }
+    }
+}
+
+// Standart GPIO Başlatma Fonksiyonu (Eğer CubeMX kullanıyorsanız bu kısım otomatik üretilir)
+static void MX_GPIO_Init(void) {
+    GPIO_InitTypeDef GPIO_InitStruct = {0};
+
+    // GPIOA ve GPIOD saatlerini aktifleştir
+    __HAL_RCC_GPIOA_CLK_ENABLE();
+    __HAL_RCC_GPIOD_CLK_ENABLE();
+
+    // D Portu (LED'ler) Çıkış Ayarları
+    GPIO_InitStruct.Pin = LED_GREEN | LED_ORANGE | LED_RED | LED_BLUE;
+    GPIO_InitStruct.Mode = GPIO_MODE_OUTPUT_PP; // Push-Pull çıkış
+    GPIO_InitStruct.Pull = GPIO_NOPULL;
+    GPIO_InitStruct.Speed = GPIO_SPEED_FREQ_LOW;
+    HAL_GPIO_Init(GPIOD, &GPIO_InitStruct);
+
+    // A Portu (Buton - PA0) Giriş Ayarları
+    GPIO_InitStruct.Pin = USER_BTN;
+    GPIO_InitStruct.Mode = GPIO_MODE_INPUT;
+    GPIO_InitStruct.Pull = GPIO_NOPULL; // STM32F4 Discovery kartında PA0 donanımsal olarak pulldown'a sahiptir
+    HAL_GPIO_Init(GPIOA, &GPIO_InitStruct);
+}
+
+void SystemClock_Config(void) {
+    // CubeMX tarafından oluşturulan standart clock ayarlarınızı buraya ekleyebilirsiniz.
+    // Eğer varsayılan ayarlarla çalışıyorsanız içi boş kalabilir.
+}
