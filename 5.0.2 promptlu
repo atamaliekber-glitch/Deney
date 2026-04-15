@@ -1,0 +1,94 @@
+#include "stm32f4xx_hal.h"
+
+/* Fonksiyon Prototipleri */
+void SystemClock_Config(void);
+static void MX_GPIO_Init(void);
+
+int main(void)
+{
+  /* HAL (Hardware Abstraction Layer) kütüphanesini başlatır */
+  HAL_Init();
+
+  /* Sistem saat ayarlarını yapılandırır */
+  SystemClock_Config();
+
+  /* Port A ve Port D pinlerini giriş/çıkış olarak hazırlar */
+  MX_GPIO_Init();
+
+  /* Hangi LED'in yanacağını takip eden değişken (0: Mavi, 1: Kırmızı, 2: Yeşil, 3: Turuncu) */
+  int led_state = -1; 
+
+  /* Sonsuz Döngü */
+  while (1)
+  {
+    /* Butona basıldı mı kontrol et (Discovery kartında buton PA0'dadır ve basılınca SET olur) */
+    if (HAL_GPIO_ReadPin(GPIOA, GPIO_PIN_0) == GPIO_PIN_SET)
+    {
+      /* Debounce: Mekanik titreşimleri önlemek için kısa bir süre bekle */
+      HAL_Delay(50);
+
+      /* 50ms sonra buton hala basılıysa işlemi gerçekleştir */
+      if (HAL_GPIO_ReadPin(GPIOA, GPIO_PIN_0) == GPIO_PIN_SET)
+      {
+        /* Durumu bir artır ve 4'e göre modunu al (0,1,2,3 döngüsü için) */
+        led_state = (led_state + 1) % 4;
+
+        /* Önce tüm LED'leri söndür (Sadece birinin yanması istendiği için) */
+        HAL_GPIO_WritePin(GPIOD, GPIO_PIN_12 | GPIO_PIN_13 | GPIO_PIN_14 | GPIO_PIN_15, GPIO_PIN_RESET);
+
+        /* Belirlenen sıraya göre ilgili LED'i yak */
+        switch (led_state)
+        {
+          case 0: /* Mavi LED (PD15) */
+            HAL_GPIO_WritePin(GPIOD, GPIO_PIN_15, GPIO_PIN_SET);
+            break;
+          case 1: /* Kırmızı LED (PD14) */
+            HAL_GPIO_WritePin(GPIOD, GPIO_PIN_14, GPIO_PIN_SET);
+            break;
+          case 2: /* Yeşil LED (PD12) */
+            HAL_GPIO_WritePin(GPIOD, GPIO_PIN_12, GPIO_PIN_SET);
+            break;
+          case 3: /* Turuncu LED (PD13) */
+            HAL_GPIO_WritePin(GPIOD, GPIO_PIN_13, GPIO_PIN_SET);
+            break;
+        }
+
+        /* Buton bırakılana kadar bekle (Basılı tutulduğunda sürekli değişimi engeller) */
+        while (HAL_GPIO_ReadPin(GPIOA, GPIO_PIN_0) == GPIO_PIN_SET);
+      }
+    }
+  }
+}
+
+/**
+  * @brief GPIO Donanım Yapılandırması
+  */
+static void MX_GPIO_Init(void)
+{
+  GPIO_InitTypeDef GPIO_InitStruct = {0};
+
+  /* Port A ve Port D'nin saat sinyallerini aktif et */
+  __HAL_RCC_GPIOA_CLK_ENABLE();
+  __HAL_RCC_GPIOD_CLK_ENABLE();
+
+  /* Başlangıçta tüm LED'leri kapalı konuma getir */
+  HAL_GPIO_WritePin(GPIOD, GPIO_PIN_12 | GPIO_PIN_13 | GPIO_PIN_14 | GPIO_PIN_15, GPIO_PIN_RESET);
+
+  /* Buton Yapılandırması: PA0 - Giriş Modu */
+  GPIO_InitStruct.Pin = GPIO_PIN_0;
+  GPIO_InitStruct.Mode = GPIO_MODE_INPUT;
+  GPIO_InitStruct.Pull = GPIO_NOPULL; // Kart üzerinde harici direnç mevcuttur
+  HAL_GPIO_Init(GPIOA, &GPIO_InitStruct);
+
+  /* LED Yapılandırması: PD12, PD13, PD14, PD15 - Çıkış Modu */
+  GPIO_InitStruct.Pin = GPIO_PIN_12 | GPIO_PIN_13 | GPIO_PIN_14 | GPIO_PIN_15;
+  GPIO_InitStruct.Mode = GPIO_MODE_OUTPUT_PP; // Push-Pull çıkış
+  GPIO_InitStruct.Pull = GPIO_NOPULL;
+  GPIO_InitStruct.Speed = GPIO_SPEED_FREQ_LOW;
+  HAL_GPIO_Init(GPIOD, &GPIO_InitStruct);
+}
+
+void SystemClock_Config(void)
+{
+  /* Bu fonksiyon CubeMX tarafından kartın kristal hızına göre otomatik doldurulur. */
+}
