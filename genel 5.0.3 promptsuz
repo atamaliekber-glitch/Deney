@@ -1,0 +1,129 @@
+#include "stm32f4xx_hal.h"
+
+// STM32F407 Discovery Kartı LED ve Buton Pin Tanımlamaları
+#define LED_GREEN  GPIO_PIN_12 // Yeşil LED (Sıra: 3)
+#define LED_ORANGE GPIO_PIN_13 // Turuncu LED (Sıra: 4)
+#define LED_RED    GPIO_PIN_14 // Kırmızı LED (Sıra: 2)
+#define LED_BLUE   GPIO_PIN_15 // Mavi LED (Sıra: 1)
+#define USER_BTN   GPIO_PIN_0  // Kullanıcı Butonu (A Portu)
+
+// Kesme (Interrupt) ile main döngüsü arasında haberleşmeyi sağlayan bayrak
+// Kesme içinde değiştirildiği için 'volatile' olarak tanımlanmalıdır.
+volatile uint8_t button_flag = 0; 
+
+void SystemClock_Config(void);
+static void MX_GPIO_Init(void);
+
+int main(void) {
+    // HAL Kütüphanesini başlat ve donanım ayarlarını yap
+    HAL_Init();
+    SystemClock_Config();
+    MX_GPIO_Init();
+
+    // led_state değişkeni sırayı takip eder: 
+    // 0: Mavi, 1: Kırmızı, 2: Yeşil, 3: Turuncu
+    uint8_t led_state = 0; 
+
+    while (1) {
+        // Kesme tarafından bayrak kaldırıldıysa işlemleri yap
+        if (button_flag == 1) {
+            
+            // Bayrağı hemen indiriyoruz ki bir sonraki kesmeyi yakalayabilelim
+            button_flag = 0;
+
+            // Güvenlik için tüm LED'leri söndür
+            HAL_GPIO_WritePin(GPIOD, LED_GREEN | LED_ORANGE | LED_RED | LED_BLUE, GPIO_PIN_RESET);
+
+            // İstenen sıraya göre ilgili LED'i yak
+            switch (led_state) {
+                case 0:
+                    HAL_GPIO_WritePin(GPIOD, LED_BLUE, GPIO_PIN_SET);
+                    break;
+                case 1:
+                    HAL_GPIO_WritePin(GPIOD, LED_RED, GPIO_PIN_SET);
+                    break;
+                case 2:
+                    HAL_GPIO_WritePin(GPIOD, LED_GREEN, GPIO_PIN_SET);
+                    break;
+                case 3:
+                    HAL_GPIO_WritePin(GPIOD, LED_ORANGE, GPIO_PIN_SET);
+                    break;
+            }
+
+            // Görev yönergesi: "3 saniye süreyle yakıp söndüren..."
+            HAL_Delay(3000); // 3 saniye (3000 ms) bekle
+            
+            // Süre dolduğunda yanan LED'i (tüm portu) söndür
+            HAL_GPIO_WritePin(GPIOD, LED_GREEN | LED_ORANGE | LED_RED | LED_BLUE, GPIO_PIN_RESET);
+
+            // Bir sonraki buton basımı için sırayı ilerlet
+            led_state++;
+            if (led_state > 3) {
+                led_state = 0; // Turuncudan sonra tekrar Maviye (0'a) dön
+            }
+            
+            // 3 saniyelik bekleme sırasında butona defalarca basılmış olabilir.
+            // Bu basımların kuyrukta birikip sistemi bozmasını engellemek için kesme bayrağını temizliyoruz.
+            __HAL_GPIO_EXTI_CLEAR_IT(USER_BTN); 
+        }
+    }
+}
+
+// ----------------------------------------------------------------------------
+// KESME (INTERRUPT) FONKSİYONLARI
+// ----------------------------------------------------------------------------
+
+// Donanımsal EXTI0 Kesme Yönlendiricisi (Normalde stm32f4xx_it.c içindedir, tek dosyada çalışması için buraya eklendi)
+void EXTI0_IRQHandler(void) {
+    HAL_GPIO_EXTI_IRQHandler(USER_BTN);
+}
+
+// HAL Kütüphanesi EXTI Geri Çağırma (Callback) Fonksiyonu
+void HAL_GPIO_EXTI_Callback(uint16_t GPIO_Pin) {
+    // Buton arkını (debounce) kesme içinde engellemek için zaman kontrolü
+    static uint32_t last_interrupt_time = 0;
+    uint32_t interrupt_time = HAL_GetTick();
+
+    // Eğer iki kesme arasında 200 milisaniyeden fazla zaman geçtiyse geçerli bir basım kabul et
+    if (interrupt_time - last_interrupt_time > 200) {
+        if (GPIO_Pin == USER_BTN) {
+            button_flag = 1; // Main döngüsüne işareti gönder
+        }
+    }
+    last_interrupt_time = interrupt_time;
+}
+
+// ----------------------------------------------------------------------------
+// DONANIM BAŞLATMA FONKSİYONLARI
+// ----------------------------------------------------------------------------
+
+static void MX_GPIO_Init(void) {
+    GPIO_InitTypeDef GPIO_InitStruct = {0};
+
+    // GPIOA ve GPIOD saatlerini aktifleştir
+    __HAL_RCC_GPIOA_CLK_ENABLE();
+    __HAL_RCC_GPIOD_CLK_ENABLE();
+
+    // D Portu (LED'ler) Çıkış Ayarları
+    GPIO_InitStruct.Pin = LED_GREEN | LED_ORANGE | LED_RED | LED_BLUE;
+    GPIO_InitStruct.Mode = GPIO_MODE_OUTPUT_PP; 
+    GPIO_InitStruct.Pull = GPIO_NOPULL;
+    GPIO_InitStruct.Speed = GPIO_SPEED_FREQ_LOW;
+    HAL_GPIO_Init(GPIOD, &GPIO_InitStruct);
+
+    // A Portu (Buton - PA0) EXTI Kesme Giriş Ayarları
+    // Butona basıldığında voltaj 0'dan 3.3V'a çıkar, bu yüzden RISING (Yükselen Kenar) seçilir.
+    GPIO_InitStruct.Pin = USER_BTN;
+    GPIO_InitStruct.Mode = GPIO_MODE_IT_RISING; 
+    GPIO_InitStruct.Pull = GPIO_NOPULL; 
+    HAL_GPIO_Init(GPIOA, &GPIO_InitStruct);
+
+    // EXTI0 Kesmesini NVIC (İç İçe Geçmiş Vektör Kesme Kontrolcüsü) üzerinden aktifleştir
+    // Önceliği 2 olarak ayarlıyoruz (0 en yüksek, 15 en düşük)
+    HAL_NVIC_SetPriority(EXTI0_IRQn, 2, 0);
+    HAL_NVIC_EnableIRQ(EXTI0_IRQn);
+}
+
+void SystemClock_Config(void) {
+    // Saat ayarları (varsayılan ise boş kalabilir)
+}
